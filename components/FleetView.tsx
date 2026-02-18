@@ -20,7 +20,10 @@ import {
   Zap,
   User,
   Calendar,
-  ShieldAlert
+  ShieldAlert,
+  Paperclip,
+  Trash2,
+  Files
 } from 'lucide-react';
 
 interface VehicleWithFuel extends Vehicle {
@@ -31,6 +34,7 @@ interface VehicleWithFuel extends Vehicle {
     liters: number;
     cost: number;
     receiptUrl?: string;
+    receiptFileName?: string;
   }>;
 }
 
@@ -43,8 +47,12 @@ interface FleetViewProps {
 const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userRole }) => {
   const isAdmin = userRole === 'admin';
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<'info' | 'history' | 'fuel'>('info'); 
+  const [modalTab, setModalTab] = useState<'info' | 'history' | 'fuel' | 'documents'>('info'); 
   const [editingVehicle, setEditingVehicle] = useState<VehicleWithFuel | null>(null);
+  const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const docFileInputRef = useRef<HTMLInputElement>(null);
   
   // Forms State
   const [vehicleForm, setVehicleForm] = useState<Partial<VehicleWithFuel>>({
@@ -59,12 +67,25 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     status: 'Operacional'
   });
 
-  const [fuelForm, setFuelForm] = useState({ 
+  const [fuelForm, setFuelForm] = useState<{
+    vehicleId: string;
+    date: string;
+    km: string;
+    liters: string;
+    cost: string;
+    receiptFile: File | null;
+  }>({ 
     vehicleId: '', 
     date: new Date().toISOString().split('T')[0], 
     km: '', 
     liters: '', 
-    cost: '' 
+    cost: '',
+    receiptFile: null
+  });
+
+  const [docForm, setDocForm] = useState({
+    name: '',
+    file: null as File | null
   });
   
   // Histórico com cálculo KM/L
@@ -89,10 +110,24 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     setModalTab('fuel');
     if (vehicle) {
       setEditingVehicle(vehicle);
-      setFuelForm({ vehicleId: vehicle.id, date: new Date().toISOString().split('T')[0], km: vehicle.currentKms.toString(), liters: '', cost: '' });
+      setFuelForm({ 
+        vehicleId: vehicle.id, 
+        date: new Date().toISOString().split('T')[0], 
+        km: vehicle.currentKms.toString(), 
+        liters: '', 
+        cost: '',
+        receiptFile: null 
+      });
     } else {
       setEditingVehicle(null);
-      setFuelForm({ vehicleId: '', date: new Date().toISOString().split('T')[0], km: '', liters: '', cost: '' });
+      setFuelForm({ 
+        vehicleId: '', 
+        date: new Date().toISOString().split('T')[0], 
+        km: '', 
+        liters: '', 
+        cost: '',
+        receiptFile: null
+      });
     }
     setIsModalOpen(true);
   };
@@ -159,7 +194,9 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
       date: fuelForm.date, 
       km: Number(fuelForm.km), 
       liters: Number(fuelForm.liters), 
-      cost: Number(fuelForm.cost) 
+      cost: Number(fuelForm.cost),
+      receiptUrl: fuelForm.receiptFile ? URL.createObjectURL(fuelForm.receiptFile) : undefined,
+      receiptFileName: fuelForm.receiptFile?.name
     };
 
     const updated = { 
@@ -170,6 +207,47 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     
     onUpdateVehicles(vehicles.map(v => v.id === updated.id ? updated : v));
     setIsModalOpen(false);
+  };
+
+  const handleAddDocument = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onUpdateVehicles || !editingVehicle || !docForm.file || !docForm.name) return;
+
+    const currentDocs = editingVehicle.documents || [];
+    if (currentDocs.length >= 10) {
+      alert("Limite de 10 documentos por veículo atingido.");
+      return;
+    }
+
+    const newDoc: VehicleDocument = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: docForm.name,
+      type: 'Outros',
+      uploadDate: new Date().toISOString().split('T')[0],
+      url: URL.createObjectURL(docForm.file),
+      fileName: docForm.file.name
+    };
+
+    const updatedVehicle = {
+      ...editingVehicle,
+      documents: [...currentDocs, newDoc]
+    };
+
+    onUpdateVehicles(vehicles.map(v => v.id === updatedVehicle.id ? updatedVehicle : v));
+    setEditingVehicle(updatedVehicle);
+    setDocForm({ name: '', file: null });
+  };
+
+  const handleDeleteDocument = (docId: string) => {
+    if (!onUpdateVehicles || !editingVehicle || !isAdmin) return;
+    
+    const updatedVehicle = {
+      ...editingVehicle,
+      documents: (editingVehicle.documents || []).filter(d => d.id !== docId)
+    };
+
+    onUpdateVehicles(vehicles.map(v => v.id === updatedVehicle.id ? updatedVehicle : v));
+    setEditingVehicle(updatedVehicle);
   };
 
   return (
@@ -247,23 +325,27 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3rem] w-full max-w-2xl overflow-hidden animate-scale-in flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-[3rem] w-full max-w-2xl overflow-hidden animate-scale-in flex flex-col max-h-[95vh]">
             <div className="bg-slate-900 p-8 flex justify-between items-center text-white shrink-0">
               <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
-                {modalTab === 'fuel' ? <Droplets className="text-emerald-500" /> : <Truck className="text-amber-500" />}
-                {modalTab === 'fuel' ? 'Registrar Abastecimento' : editingVehicle ? 'Editar Viatura' : 'Nova Viatura'}
+                {modalTab === 'fuel' ? <Droplets className="text-emerald-500" /> : modalTab === 'documents' ? <Files className="text-blue-500" /> : <Truck className="text-amber-500" />}
+                {modalTab === 'fuel' ? 'Registrar Abastecimento' : modalTab === 'documents' ? 'Documentos do Veículo' : editingVehicle ? 'Editar Viatura' : 'Nova Viatura'}
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X /></button>
             </div>
             
             <div className="p-2 bg-slate-100 flex gap-2 shrink-0">
-              {(['info', 'history', 'fuel'] as const).map(tab => (
+              {(['info', 'history', 'fuel', 'documents'] as const).map(tab => (
                 <button 
                   key={tab} 
-                  onClick={() => setModalTab(tab)} 
-                  className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${modalTab === tab ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
+                  onClick={() => {
+                    if (!editingVehicle && (tab === 'history' || tab === 'documents')) return;
+                    setModalTab(tab);
+                  }} 
+                  disabled={!editingVehicle && (tab === 'history' || tab === 'documents')}
+                  className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${!editingVehicle && (tab === 'history' || tab === 'documents') ? 'opacity-30 cursor-not-allowed' : ''} ${modalTab === tab ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
                 >
-                  {tab === 'info' ? 'Dados Gerais' : tab === 'history' ? 'Histórico' : 'Abastecimento'}
+                  {tab === 'info' ? 'Dados Gerais' : tab === 'history' ? 'Histórico' : tab === 'fuel' ? 'Abastecimento' : 'Documentos'}
                 </button>
               ))}
             </div>
@@ -376,8 +458,28 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Data do Recibo</label>
                         <div className="relative">
                           <Calendar size={18} className="absolute left-4 top-4 text-emerald-600 pointer-events-none" />
-                          <input type="date" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.date} onChange={e => setFuelForm({...fuelForm, date: e.target.value})} />
+                          <input type="date" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.date} onChange={e => setFuelForm({...fuelForm, date: e.target.value})} />
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="animate-fade-in">
+                      <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Anexar Fatura / Recibo</label>
+                      <div 
+                        className="border-2 border-dashed border-slate-300 rounded-[2rem] p-8 bg-slate-50 relative group flex flex-col items-center justify-center transition-all hover:border-emerald-500 hover:bg-emerald-50/30"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <input 
+                          type="file" 
+                          ref={fileInputRef}
+                          className="hidden" 
+                          onChange={e => setFuelForm({...fuelForm, receiptFile: e.target.files?.[0] || null})}
+                        />
+                        <UploadCloud size={40} className="text-slate-400 group-hover:text-emerald-600 mb-2 transition-all" />
+                        <p className="text-[11px] font-black text-slate-600 uppercase tracking-widest group-hover:text-emerald-700">
+                          {fuelForm.receiptFile ? fuelForm.receiptFile.name : 'Clique para selecionar arquivo'}
+                        </p>
+                        <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold">PDF, JPG ou PNG</p>
                       </div>
                     </div>
                   </div>
@@ -419,11 +521,24 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                             <p className="text-sm font-black text-slate-900 uppercase tracking-tight">
                               {log.type === 'fuel' ? `${log.liters} Litros • ${log.km.toLocaleString()} km` : log.type}
                             </p>
-                            {log.efficiency && <span className="text-[9px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1 w-fit mt-1"><Zap size={10} /> {log.efficiency} KM/L</span>}
+                            <div className="flex gap-2 mt-1">
+                              {log.efficiency && <span className="text-[9px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><Zap size={10} /> {log.efficiency} KM/L</span>}
+                              {log.receiptUrl && <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><Paperclip size={10} /> Documentado</span>}
+                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className={`text-lg font-black ${log.type === 'fuel' ? 'text-emerald-700' : 'text-blue-700'}`}>€ {log.cost.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className={`text-lg font-black ${log.type === 'fuel' ? 'text-emerald-700' : 'text-blue-700'}`}>€ {log.cost.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
+                          </div>
+                          {log.receiptUrl && (
+                            <button 
+                              onClick={() => setViewingReceipt(log.receiptUrl)}
+                              className="p-3 bg-white border border-slate-200 rounded-xl text-slate-900 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                            >
+                              <Eye size={18} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     )) : (
@@ -435,8 +550,124 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                   </div>
                 </div>
               )}
+
+              {modalTab === 'documents' && editingVehicle && (
+                <div className="space-y-8 animate-fade-in">
+                  <div className="bg-blue-50 border border-blue-100 p-6 rounded-[2rem] flex items-center gap-4">
+                    <div className="p-3 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-600/20"><Files size={24} /></div>
+                    <div>
+                      <h4 className="text-sm font-black text-blue-950 uppercase">Arquivo de Documentação</h4>
+                      <p className="text-[10px] font-medium text-blue-800 italic leading-none mt-1">Gerencie até 10 documentos por veículo (Certificados, Seguros, etc.)</p>
+                    </div>
+                  </div>
+
+                  {isAdmin && (editingVehicle.documents?.length || 0) < 10 && (
+                    <form onSubmit={handleAddDocument} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-200 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Nome do Documento</label>
+                          <input 
+                            required 
+                            type="text" 
+                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-600" 
+                            placeholder="Ex: Carta de Condução, Seguro 2024"
+                            value={docForm.name}
+                            onChange={e => setDocForm({...docForm, name: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Anexo (Foto/PDF)</label>
+                          <div 
+                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-500 cursor-pointer flex items-center justify-between"
+                            onClick={() => docFileInputRef.current?.click()}
+                          >
+                            <span className="truncate">{docForm.file ? docForm.file.name : 'Selecionar Arquivo'}</span>
+                            <UploadCloud size={16} />
+                            <input 
+                              type="file" 
+                              ref={docFileInputRef}
+                              className="hidden" 
+                              onChange={e => setDocForm({...docForm, file: e.target.files?.[0] || null})}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <button 
+                        type="submit" 
+                        disabled={!docForm.name || !docForm.file}
+                        className="w-full py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        <Plus size={16} /> Adicionar Documento
+                      </button>
+                    </form>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {editingVehicle.documents?.map(doc => (
+                      <div key={doc.id} className="p-4 bg-white border border-slate-200 rounded-2xl flex items-center justify-between group hover:border-blue-600 transition-all">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><FileText size={18} /></div>
+                          <div>
+                            <p className="text-[10px] font-black text-slate-950 uppercase tracking-tight leading-none mb-1">{doc.name}</p>
+                            <p className="text-[8px] font-bold text-slate-500 uppercase">Subido em {new Date(doc.uploadDate).toLocaleDateString('pt-PT')}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setViewingReceipt(doc.url || '')}
+                            className="p-2 text-slate-400 hover:text-blue-600 transition-all"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleDeleteDocument(doc.id)}
+                              className="p-2 text-slate-400 hover:text-red-600 transition-all"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {(editingVehicle.documents?.length || 0) === 0 && (
+                      <div className="col-span-full py-16 text-center border-2 border-dashed border-slate-100 rounded-[2rem]">
+                        <Files size={40} className="mx-auto text-slate-200 mb-4 opacity-50" />
+                        <p className="text-slate-400 uppercase font-black text-[9px] tracking-widest">Nenhum documento arquivado</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {editingVehicle.documents && editingVehicle.documents.length >= 10 && (
+                    <p className="text-center text-[10px] font-black text-amber-600 uppercase tracking-widest animate-pulse">
+                      Limite de 10 documentos atingido
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL: VISUALIZAÇÃO DE COMPROVANTE */}
+      {viewingReceipt && (
+        <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4" onClick={() => setViewingReceipt(null)}>
+           <div className="relative max-w-5xl max-h-[95vh] w-full bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
+                <div className="flex items-center gap-4">
+                   <FileText size={24} className="text-emerald-500" />
+                   <h4 className="font-black text-sm uppercase tracking-widest">Visualização de Documento</h4>
+                </div>
+                <button onClick={() => setViewingReceipt(null)} className="p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"><X size={28}/></button>
+              </div>
+              <div className="p-4 flex items-center justify-center min-h-[500px] bg-slate-100 overflow-auto">
+                 <img src={viewingReceipt} className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" alt="Documento" />
+              </div>
+              <div className="bg-white p-6 border-t border-slate-100 flex justify-end">
+                  <button onClick={() => setViewingReceipt(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar</button>
+              </div>
+           </div>
         </div>
       )}
     </div>

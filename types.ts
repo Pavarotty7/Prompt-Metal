@@ -26,6 +26,22 @@ export interface ProjectStage {
   weight: number; // Peso da etapa na obra total (default 1)
 }
 
+export interface MaterialLog {
+  id: string;
+  projectId: string;
+  date: string;
+  materialName: string;
+  quantity: number;
+  unit: string; // kg, m2, un, sc
+  unitPrice: number;
+  supplier: string;
+  invoice: string; // NF
+  type: 'entrada' | 'saida';
+  notes?: string;
+  attachmentName?: string;
+  attachmentUrl?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -40,6 +56,7 @@ export interface Project {
   progress: number; // 0-100
   stages?: ProjectStage[];
   documents?: ProjectDocument[];
+  materialLogs?: MaterialLog[];
   category: 'Industrial' | 'Comercial' | 'Residencial' | 'Metalomecânica' | 'Civil';
   priority: 'Baixa' | 'Normal' | 'Urgente';
   areaM2?: number;
@@ -66,47 +83,6 @@ export interface ScheduleTask {
   subTasks?: SubTask[]; // Detalhamento de mão de obra
 }
 
-export interface Material {
-  id: string;
-  projectId: string;
-  name: string;
-  quantity: number;
-  unit: string;
-  unitPrice: number;
-  supplier: string;
-  date: string;
-}
-
-export interface MaterialLog {
-  id: string;
-  projectId: string;
-  date: string;
-  materialName: string;
-  quantity: number;
-  unit: string; // kg, m2, un, sc
-  unitPrice: number;
-  supplier: string;
-  invoice: string; // NF
-  type: 'entrada' | 'saida';
-  notes?: string;
-  attachmentName?: string;
-  attachmentUrl?: string;
-}
-
-export interface LaborLog {
-  id: string;
-  projectId: string;
-  workerName: string;
-  role: string;
-  workerType: 'CLT' | 'PJ' | 'Terceiro';
-  date: string;
-  hoursWorked: number;
-  hourlyRate: number;
-  notes?: string;
-  attachmentName?: string;
-  attachmentUrl?: string;
-}
-
 export interface Transaction {
   id: string;
   date: string;
@@ -119,6 +95,20 @@ export interface Transaction {
   notes?: string;
   attachmentName?: string;
   attachmentUrl?: string;
+}
+
+// Interface para transações de cartão corporativo para resolver erros de importação
+export interface CorporateCardTransaction {
+  id: string;
+  employeeId: string;
+  date: string;
+  description: string;
+  amount: number;
+  category: string;
+  status: string;
+  receiptAttached: boolean;
+  receiptFileName?: string;
+  receiptUrl?: string;
 }
 
 export interface VehicleDocument {
@@ -140,6 +130,18 @@ export interface MaintenanceRecord {
   receiptUrl?: string;
 }
 
+// Interface para logs de abastecimento para resolver erros de importação
+export interface FuelLog {
+  id: string;
+  date: string;
+  km: number;
+  liters: number;
+  cost: number;
+  receiptUrl?: string;
+  receiptFileName?: string;
+  vehicleId?: string;
+}
+
 export interface Vehicle {
   id: string;
   model: string;
@@ -152,20 +154,8 @@ export interface Vehicle {
   annualInspectionDate?: string; // Nova data de inspeção
   documents?: VehicleDocument[]; // Lista de documentos
   maintenanceHistory?: MaintenanceRecord[]; // Histórico de manutenções
+  fuelHistory?: FuelLog[]; // Histórico de abastecimentos
   status: 'Operacional' | 'Manutenção';
-}
-
-export interface FuelLog {
-  id: string;
-  vehicleId: string;
-  date: string;
-  kmStart: number;
-  kmEnd: number;
-  liters: number;
-  cost: number;
-  projectLinked: string;
-  receiptUrl?: string;
-  receiptFileName?: string;
 }
 
 export interface Employee {
@@ -183,19 +173,6 @@ export interface Employee {
   cardLast4?: string;
   cardExpiry?: string; 
   cardImage?: string; 
-}
-
-export interface CorporateCardTransaction {
-  id: string;
-  employeeId: string;
-  date: string;
-  description: string;
-  amount: number;
-  category: string;
-  status: 'Pendente' | 'Aprovado' | 'Rejeitado';
-  receiptAttached: boolean;
-  receiptFileName?: string; 
-  receiptUrl?: string; 
 }
 
 export interface TimesheetRecord {

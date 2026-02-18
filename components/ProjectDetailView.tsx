@@ -27,7 +27,9 @@ import {
   CheckCircle2,
   Trash2,
   Briefcase,
-  Save
+  Save,
+  Coins,
+  Truck
 } from 'lucide-react';
 
 interface ProjectDetailViewProps {
@@ -43,8 +45,8 @@ type TabType = 'metrics' | 'materials' | 'team' | 'statement' | 'documents';
 const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, userRole, employees = [], onUpdateProject }) => {
   const [activeTab, setActiveTab] = useState<TabType>('metrics');
   const isAdmin = userRole === 'admin';
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const materialFileInputRef = useRef<HTMLInputElement>(null);
+  const docFileInputRef = useRef<HTMLInputElement>(null);
 
   const stages = useMemo<ProjectStage[]>(() => project.stages || [
     { id: 's1', name: 'Mobilização de Estaleiro', progress: 0, status: 'Pendente', weight: 5 },
@@ -54,8 +56,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     { id: 's5', name: 'Acabamentos e Pintura', progress: 0, status: 'Pendente', weight: 10 },
   ], [project.stages]);
 
-  const [localMaterials, setLocalMaterials] = useState<MaterialLog[]>([]);
-
+  const materials = useMemo(() => project.materialLogs || [], [project.materialLogs]);
   const projectDocuments = useMemo(() => project.documents || [], [project.documents]);
 
   const allocatedTeam = useMemo(() => 
@@ -106,7 +107,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
 
   const handleSaveMaterial = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) return;
+    if (!isAdmin || !onUpdateProject) return;
 
     const newMaterial: MaterialLog = {
       id: Math.random().toString(36).substr(2, 9),
@@ -123,7 +124,14 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
       attachmentUrl: materialAttachment ? URL.createObjectURL(materialAttachment) : undefined
     };
 
-    setLocalMaterials(prev => [newMaterial, ...prev]);
+    const costIncrease = newMaterial.quantity * newMaterial.unitPrice;
+
+    onUpdateProject({
+      ...project,
+      materialLogs: [newMaterial, ...(project.materialLogs || [])],
+      spent: project.spent + costIncrease
+    });
+
     setIsMaterialModalOpen(false);
     setMaterialForm({ date: new Date().toISOString().split('T')[0], materialName: '', quantity: '', unit: 'un', unitPrice: '', supplier: '', invoice: '' });
     setMaterialAttachment(null);
@@ -285,7 +293,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                         <tr><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">Data</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">Material</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">NF</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-center">Quant.</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-right">Total (€)</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-center">Comprovante</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                    {localMaterials.length > 0 ? localMaterials.map(m => (
+                    {materials.length > 0 ? materials.map(m => (
                         <tr key={m.id} className="hover:bg-slate-50 transition-all group">
                             <td className="py-5 px-8 text-xs font-black text-slate-700 uppercase">{new Date(m.date).toLocaleDateString('pt-PT')}</td>
                             <td className="py-5 px-8 text-sm font-black text-slate-900 uppercase tracking-tight">{m.materialName}</td>
@@ -367,8 +375,170 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                 </div>
             </div>
         )}
+
+        {activeTab === 'statement' && (
+           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+              <div className="p-8 border-b border-slate-200 bg-slate-50">
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2"><DollarSign size={18} /> Resumo Orçamental</h3>
+                  <p className="text-[9px] font-bold text-slate-600 uppercase mt-1">Comparativo de orçamento planejado vs custo real</p>
+              </div>
+              <div className="p-8 space-y-8">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="p-8 bg-slate-900 rounded-[2rem] text-white">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Budget Total</p>
+                        <p className="text-3xl font-black">€ {project.budget.toLocaleString('pt-PT')}</p>
+                    </div>
+                    <div className="p-8 bg-red-50 border-2 border-red-100 rounded-[2rem] text-red-900">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-red-400 mb-2">Total Executado</p>
+                        <p className="text-3xl font-black">€ {project.spent.toLocaleString('pt-PT')}</p>
+                    </div>
+                 </div>
+                 <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200">
+                    <div className="flex justify-between items-center mb-4">
+                       <span className="text-xs font-black text-slate-900 uppercase tracking-widest">Margem de Obra</span>
+                       <span className="text-lg font-black text-emerald-600">{(((project.budget - project.spent) / project.budget) * 100).toFixed(1)}%</span>
+                    </div>
+                    <div className="h-4 bg-slate-200 rounded-full overflow-hidden p-1">
+                       <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.max(0, ((project.budget - project.spent) / project.budget) * 100)}%` }} />
+                    </div>
+                 </div>
+              </div>
+           </div>
+        )}
       </div>
-      {/* ... Rest of the file (modals and styles) ... */}
+
+      {/* MODAL: LANÇAR MATERIAL */}
+      {isMaterialModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-in border border-white/10 flex flex-col max-h-[95vh]">
+              <div className="bg-slate-900 p-8 flex justify-between items-center text-white shrink-0">
+                 <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3"><Package size={24} className="text-amber-500" /> Registrar Entrada de Material</h3>
+                 <button onClick={() => setIsMaterialModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
+              </div>
+              <form onSubmit={handleSaveMaterial} className="p-8 space-y-6 overflow-y-auto">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="col-span-2">
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Descrição do Material</label>
+                       <input required type="text" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={materialForm.materialName} onChange={e => setMaterialForm({...materialForm, materialName: e.target.value})} placeholder="Ex: Viga IPE 200 S235JR" />
+                    </div>
+                    <div>
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Quantidade</label>
+                       <input required type="number" step="0.01" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black" value={materialForm.quantity} onChange={e => setMaterialForm({...materialForm, quantity: e.target.value})} />
+                    </div>
+                    <div>
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Unidade</label>
+                       <select className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black" value={materialForm.unit} onChange={e => setMaterialForm({...materialForm, unit: e.target.value})}>
+                          <option value="un">Unidade (un)</option>
+                          <option value="kg">Quilograma (kg)</option>
+                          <option value="m2">Metro Quadrado (m2)</option>
+                          <option value="m">Metro Linear (m)</option>
+                       </select>
+                    </div>
+                    <div>
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Preço Unitário (€)</label>
+                       <input required type="number" step="0.01" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-emerald-800" value={materialForm.unitPrice} onChange={e => setMaterialForm({...materialForm, unitPrice: e.target.value})} />
+                    </div>
+                    <div>
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Data do Recebimento</label>
+                       <input required type="date" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black" value={materialForm.date} onChange={e => setMaterialForm({...materialForm, date: e.target.value})} />
+                    </div>
+                    <div className="col-span-2 grid grid-cols-2 gap-6">
+                       <div>
+                          <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Fornecedor</label>
+                          <input required type="text" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black" value={materialForm.supplier} onChange={e => setMaterialForm({...materialForm, supplier: e.target.value})} placeholder="Razão Social" />
+                       </div>
+                       <div>
+                          <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Nº Fatura / Guia</label>
+                          <input required type="text" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black" value={materialForm.invoice} onChange={e => setMaterialForm({...materialForm, invoice: e.target.value})} placeholder="NF-0000" />
+                       </div>
+                    </div>
+                    <div className="col-span-2">
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Anexar Comprovante (Opcional)</label>
+                       <div 
+                         className="border-2 border-dashed border-slate-300 rounded-[2rem] p-8 bg-slate-50 relative group flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100"
+                         onClick={() => materialFileInputRef.current?.click()}
+                       >
+                          <UploadCloud size={32} className="text-slate-400 mb-2" />
+                          <p className="text-[10px] font-black text-slate-600 uppercase">{materialAttachment ? materialAttachment.name : 'Selecionar Documento'}</p>
+                          <input type="file" ref={materialFileInputRef} className="hidden" onChange={e => setMaterialAttachment(e.target.files?.[0] || null)} />
+                       </div>
+                    </div>
+                 </div>
+                 <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
+                    <button type="button" onClick={() => setIsMaterialModalOpen(false)} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                    <button type="submit" className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2">
+                       <Save size={18} className="text-amber-500" /> Salvar Material
+                    </button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {/* MODAL: NOVO DOCUMENTO */}
+      {isDocModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in border border-white/10">
+              <div className="bg-slate-900 p-8 flex justify-between items-center text-white">
+                 <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3"><Files size={24} className="text-blue-500" /> Novo Documento Técnico</h3>
+                 <button onClick={() => setIsDocModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
+              </div>
+              <form onSubmit={handleSaveDoc} className="p-8 space-y-6">
+                 <div>
+                    <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Nome do Documento</label>
+                    <input required type="text" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-900" value={docForm.name} onChange={e => setDocForm({...docForm, name: e.target.value})} placeholder="Ex: Projeto Estrutural de Cobertura" />
+                 </div>
+                 <div>
+                    <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Tipo de Documento</label>
+                    <select className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-900" value={docForm.type} onChange={e => setDocForm({...docForm, type: e.target.value as any})}>
+                       <option value="Planta">Planta</option>
+                       <option value="Câmara">Câmara / Alvará</option>
+                       <option value="Projeto">Projeto Técnico</option>
+                       <option value="Outros">Outros</option>
+                    </select>
+                 </div>
+                 <div>
+                    <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Anexo (Foto/PDF)</label>
+                    <div 
+                      className="border-2 border-dashed border-slate-300 rounded-[2rem] p-8 bg-slate-50 relative group flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100"
+                      onClick={() => docFileInputRef.current?.click()}
+                    >
+                       <UploadCloud size={32} className="text-slate-400 mb-2" />
+                       <p className="text-[10px] font-black text-slate-600 uppercase">{docAttachment ? docAttachment.name : 'Clique para selecionar arquivo'}</p>
+                       <input type="file" ref={docFileInputRef} className="hidden" onChange={e => setDocAttachment(e.target.files?.[0] || null)} />
+                    </div>
+                 </div>
+                 <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
+                    <button type="button" onClick={() => setIsDocModalOpen(false)} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                    <button type="submit" disabled={!docAttachment} className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2 disabled:opacity-50">
+                       <Save size={18} className="text-blue-500" /> Salvar no Arquivo
+                    </button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {/* MODAL: VISUALIZAÇÃO DE ANEXO */}
+      {viewingAttachment && (
+        <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4" onClick={() => setViewingAttachment(null)}>
+           <div className="relative max-w-5xl max-h-[95vh] w-full bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
+                <div className="flex items-center gap-4">
+                   <FileText size={24} className="text-emerald-500" />
+                   <h4 className="font-black text-sm uppercase tracking-widest">Visualização de Documento</h4>
+                </div>
+                <button onClick={() => setViewingAttachment(null)} className="p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"><X size={28}/></button>
+              </div>
+              <div className="p-4 flex items-center justify-center min-h-[500px] bg-slate-100 overflow-auto">
+                 <img src={viewingAttachment} className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" alt="Anexo" />
+              </div>
+              <div className="bg-white p-6 border-t border-slate-100 flex justify-end">
+                  <button onClick={() => setViewingAttachment(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar Visualização</button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
