@@ -171,18 +171,18 @@ export interface FuelLog {
 export interface Employee {
   id: string;
   name: string;
-  nif?: string;
-  role: string;
+  nif?: string; 
+  role: string; 
   type: 'CLT' | 'PJ' | 'Terceiro';
-  category: 'Administrative' | 'Operational';
+  category: 'Administrative' | 'Operational'; 
   allocationId: string; // Pode ser ID de Obra ou ID de Departamento
   allocationType: 'project' | 'department'; // Tipo da alocação
-  baseRate?: number;
+  baseRate?: number; 
   hasCorporateCard?: boolean;
   cardLimit?: number;
   cardLast4?: string;
-  cardExpiry?: string;
-  cardImage?: string;
+  cardExpiry?: string; 
+  cardImage?: string; 
 }
 
 export interface CorporateCardTransaction {
@@ -194,8 +194,8 @@ export interface CorporateCardTransaction {
   category: string;
   status: 'Pendente' | 'Aprovado' | 'Rejeitado';
   receiptAttached: boolean;
-  receiptFileName?: string;
-  receiptUrl?: string;
+  receiptFileName?: string; 
+  receiptUrl?: string; 
 }
 
 export interface TimesheetRecord {
@@ -204,14 +204,14 @@ export interface TimesheetRecord {
   date: string;
   projectId: string;
   status: 'Presente' | 'Falta' | 'Folga' | 'Escritório';
-  standardHours: number;
-  dailyRate: number;
-  hourlyRate: number;
+  standardHours: number; 
+  dailyRate: number; 
+  hourlyRate: number; 
   overtimeHours: number;
-  advanceDeduction: number;
+  advanceDeduction: number; 
   notes?: string;
-  totalPay: number;
-  attachment?: string;
+  totalPay: number; 
+  attachment?: string; 
 }
 
 export interface ChecklistItem {
@@ -222,4 +222,4 @@ export interface ChecklistItem {
   deadline: string;
 }
 
-export type ViewState = 'home' | 'dashboard' | 'projects' | 'schedule' | 'finance' | 'fleet' | 'compliance' | 'team' | 'project-detail' | 'timesheet' | 'corporate-cards';
+export type ViewState = 'home' | 'dashboard' | 'projects' | 'schedule' | 'finance' | 'fleet' | 'compliance' | 'ai-analysis' | 'team' | 'project-detail' | 'timesheet' | 'corporate-cards';

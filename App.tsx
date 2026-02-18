@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc, where, QueryConstraint } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc, where, writeBatch, setDoc } from 'firebase/firestore';
 import { db, auth } from './services/firebase';
 import { onAuthStateChanged, User, signOut as firebaseSignOut } from 'firebase/auth';
 import Sidebar from './components/Sidebar';
@@ -10,6 +10,7 @@ import ProjectDetailView from './components/ProjectDetailView';
 import FinanceView from './components/FinanceView';
 import FleetView from './components/FleetView';
 import ComplianceView from './components/ComplianceView';
+import AIAdvisor from './components/AIAdvisor';
 import TeamView from './components/TeamView';
 import TimesheetView from './components/TimesheetView';
 import CorporateCardView from './components/CorporateCardView';
@@ -17,32 +18,21 @@ import HomeLanding from './components/HomeLanding';
 import RoleSelection from './components/RoleSelection';
 import ScheduleView from './components/ScheduleView';
 import { ViewState, Transaction, Project, Employee, UserRole, Vehicle, TimesheetRecord, ScheduleTask, ChecklistItem } from './types';
-import {
-  MOCK_PROJECTS,
-  MOCK_TRANSACTIONS,
-  MOCK_VEHICLES,
-  MOCK_EMPLOYEES,
-  MOCK_TIMESHEET_RECORDS
-} from './src/constants';
+import { MOCK_PROJECTS, MOCK_TRANSACTIONS, MOCK_VEHICLES, MOCK_EMPLOYEES, MOCK_TIMESHEET_RECORDS } from './constants';
 
 const App: React.FC = () => {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<ViewState>('home');
 
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
-  const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
-  const [employees, setEmployees] = useState<Employee[]>(MOCK_EMPLOYEES);
-  const [vehicles, setVehicles] = useState<Vehicle[]>(MOCK_VEHICLES);
-  const [timesheetRecords, setTimesheetRecords] = useState<TimesheetRecord[]>(MOCK_TIMESHEET_RECORDS);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [timesheetRecords, setTimesheetRecords] = useState<TimesheetRecord[]>([]);
   const [scheduleTasks, setScheduleTasks] = useState<ScheduleTask[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-
-  const [complianceItems, setComplianceItems] = useState<ChecklistItem[]>([
-    { id: '1', text: "Alvará de funcionamento válido (Sede)", checked: true, critical: true, deadline: '2025-12-28' },
-    { id: '2', text: "PPRA e PCMSO atualizados", checked: true, critical: true, deadline: '2025-10-15' },
-    { id: '3', text: "Manual de Operações da Franquia (V.2025)", checked: true, critical: false, deadline: '2025-11-20' },
-  ]);
+  const [complianceItems, setComplianceItems] = useState<ChecklistItem[]>([]);
 
   // Monitorar autenticação do Firebase
   useEffect(() => {
@@ -176,6 +166,44 @@ const App: React.FC = () => {
     return unsubscribe;
   }, [currentUser]);
 
+  // Sync Timesheet Records from Firestore (real-time listener)
+  useEffect(() => {
+    if (!currentUser) {
+      setTimesheetRecords(MOCK_TIMESHEET_RECORDS);
+      return;
+    }
+    const q = query(
+      collection(db, 'timesheetRecords'),
+      where('userId', '==', currentUser.uid),
+      orderBy('date', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TimesheetRecord));
+      setTimesheetRecords(data.length > 0 ? data : MOCK_TIMESHEET_RECORDS);
+    }, (error) => {
+      console.log('Using mock timesheet records (Firestore unavailable):', error);
+      setTimesheetRecords(MOCK_TIMESHEET_RECORDS);
+    });
+    return unsubscribe;
+  }, [currentUser]);
+
+  // Sync Compliance Items from Firestore (real-time listener)
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+    const docRef = doc(db, 'compliance', currentUser.uid);
+    const unsubscribe = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setComplianceItems(data.items || []);
+      }
+    }, (error) => {
+      console.log('Firestore unavailable for compliance:', error);
+    });
+    return unsubscribe;
+  }, [currentUser]);
+
   const handleSetRole = useCallback((role: UserRole, stayLoggedIn: boolean) => {
     setUserRole(role);
     if (stayLoggedIn && role) {
@@ -183,6 +211,7 @@ const App: React.FC = () => {
     }
   }, []);
 
+<<<<<<< HEAD
   const handleAddTransaction = useCallback(async (newTransaction: Transaction) => {
     if (!currentUser) {
       console.error('User must be authenticated to add transactions');
@@ -334,6 +363,55 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
+  const handleAddTimesheetBatch = useCallback(async (newRecords: TimesheetRecord[]) => {
+    if (!currentUser) {
+      console.error('User must be authenticated to add timesheet records');
+      return;
+    }
+    try {
+      const batch = writeBatch(db);
+      newRecords.forEach(record => {
+        const docRef = doc(collection(db, 'timesheetRecords'));
+        batch.set(docRef, {
+          ...record,
+          userId: currentUser.uid
+        });
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error('Error adding timesheet batch:', error);
+      setTimesheetRecords(prev => [...newRecords, ...prev]);
+    }
+  }, [currentUser]);
+
+  const handleDeleteTimesheet = useCallback(async (id: string) => {
+    if (!currentUser) {
+      console.error('User must be authenticated to delete timesheet records');
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'timesheetRecords', id));
+    } catch (error) {
+      console.error('Error deleting timesheet record:', error);
+      setTimesheetRecords(prev => prev.filter(r => r.id !== id));
+    }
+  }, [currentUser]);
+
+  const handleSetComplianceItems = useCallback(async (items: ChecklistItem[]) => {
+    if (!currentUser) {
+      console.error('User must be authenticated to update compliance');
+      return;
+    }
+    try {
+      const docRef = doc(db, 'compliance', currentUser.uid);
+      await setDoc(docRef, { items, userId: currentUser.uid });
+      setComplianceItems(items);
+    } catch (error) {
+      console.error('Error saving compliance:', error);
+      setComplianceItems(items);
+    }
+  }, [currentUser]);
+
   const handleAddScheduleTask = useCallback(async (newTask: ScheduleTask) => {
     if (!currentUser) {
       console.error('User must be authenticated to add schedule tasks');
@@ -395,92 +473,6 @@ const App: React.FC = () => {
     projects.find(p => p.id === selectedProjectId),
     [projects, selectedProjectId]);
 
-  const renderContent = () => {
-    switch (currentView) {
-      case 'dashboard':
-        return <Dashboard
-          projects={projects}
-          transactions={transactions}
-          vehicles={vehicles}
-          employees={employees}
-          complianceItems={complianceItems}
-          userRole={userRole}
-          onNavigate={handleViewChange}
-        />;
-      case 'projects':
-        return <ProjectsView
-          projects={projects}
-          onAddProject={handleAddProject}
-          onSelectProject={handleSelectProject}
-          userRole={userRole}
-        />;
-      case 'schedule':
-        return <ScheduleView
-          tasks={scheduleTasks}
-          projects={projects}
-          onAddTask={handleAddScheduleTask}
-          onUpdateTask={handleUpdateScheduleTask}
-          userRole={userRole}
-        />;
-      case 'project-detail':
-        if (activeProject) {
-          return <ProjectDetailView
-            project={activeProject}
-            onBack={() => setCurrentView('projects')}
-            userRole={userRole}
-            employees={employees}
-            onUpdateProject={handleUpdateProject}
-          />;
-        }
-        return <ProjectsView projects={projects} onAddProject={handleAddProject} onSelectProject={handleSelectProject} userRole={userRole} />;
-      case 'finance':
-        return <FinanceView
-          transactions={transactions}
-          projects={projects}
-          userRole={userRole}
-          onAddTransaction={handleAddTransaction}
-          onUpdateTransaction={handleUpdateTransaction}
-          onDeleteTransaction={handleDeleteTransaction}
-        />;
-      case 'fleet':
-        return <FleetView vehicles={vehicles} onUpdateVehicles={handleUpdateVehicles} userRole={userRole} />;
-      case 'team':
-        return <TeamView
-          userRole={userRole}
-          onAddEmployee={handleAddEmployee}
-          employees={employees}
-          timesheetRecords={timesheetRecords}
-          projects={projects}
-        />;
-      case 'timesheet':
-        return <TimesheetView
-          employees={employees}
-          projects={projects}
-          records={timesheetRecords}
-          onAddRecord={handleAddTimesheetRecord}
-          userRole={userRole}
-        />;
-      case 'corporate-cards':
-        return <CorporateCardView
-          employees={employees}
-          onUpdateEmployee={handleUpdateEmployee}
-          userRole={userRole}
-        />;
-      case 'compliance':
-        return <ComplianceView userRole={userRole} items={complianceItems} onSetItems={setComplianceItems} />;
-      default:
-        return <Dashboard
-          projects={projects}
-          transactions={transactions}
-          vehicles={vehicles}
-          employees={employees}
-          complianceItems={complianceItems}
-          userRole={userRole}
-          onNavigate={handleViewChange}
-        />;
-    }
-  };
-
   if (!userRole) return <RoleSelection onSelect={handleSetRole} />;
 
   if (currentView === 'home') return (
@@ -494,19 +486,28 @@ const App: React.FC = () => {
     />
   );
 
+  const renderContent = () => {
+    switch (currentView) {
+      case 'dashboard': return <Dashboard projects={projects} transactions={transactions} vehicles={vehicles} employees={employees} complianceItems={complianceItems} userRole={userRole} onNavigate={handleViewChange} />;
+      case 'projects': return <ProjectsView projects={projects} onAddProject={handleAddProject} onSelectProject={handleSelectProject} userRole={userRole} />;
+      case 'schedule': return <ScheduleView tasks={scheduleTasks} projects={projects} onAddTask={handleAddScheduleTask} onUpdateTask={handleUpdateScheduleTask} userRole={userRole} />;
+      case 'project-detail': return activeProject ? <ProjectDetailView project={activeProject} onBack={() => setCurrentView('projects')} userRole={userRole} employees={employees} onUpdateProject={handleUpdateProject} /> : <ProjectsView projects={projects} onAddProject={handleAddProject} onSelectProject={handleSelectProject} userRole={userRole} />;
+      case 'finance': return <FinanceView transactions={transactions} projects={projects} userRole={userRole} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} />;
+      case 'fleet': return <FleetView vehicles={vehicles} onUpdateVehicles={handleUpdateVehicles} userRole={userRole} />;
+      case 'team': return <TeamView userRole={userRole} onAddEmployee={handleAddEmployee} employees={employees} projects={projects} />;
+      case 'timesheet': return <TimesheetView employees={employees} projects={projects} records={timesheetRecords} onAddBatch={handleAddTimesheetBatch} onDeleteRecord={handleDeleteTimesheet} userRole={userRole} />;
+      case 'corporate-cards': return <CorporateCardView employees={employees} onUpdateEmployee={handleUpdateEmployee} userRole={userRole} />;
+      case 'compliance': return <ComplianceView userRole={userRole} items={complianceItems} onSetItems={handleSetComplianceItems} />;
+      case 'ai-analysis': return <AIAdvisor projects={projects} transactions={transactions} fleet={vehicles} />;
+      default: return <Dashboard projects={projects} transactions={transactions} userRole={userRole} onNavigate={handleViewChange} />;
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <Sidebar
-        currentView={currentView}
-        onChangeView={handleViewChange}
-        userRole={userRole}
-        onLogout={handleLogout}
-      />
-
+      <Sidebar currentView={currentView} onChangeView={handleViewChange} userRole={userRole} onLogout={handleLogout} />
       <main className="flex-1 ml-64 p-8 overflow-y-auto">
-        <div className="max-w-7xl mx-auto">
-          {renderContent()}
-        </div>
+        <div className="max-w-7xl mx-auto">{renderContent()}</div>
       </main>
     </div>
   );

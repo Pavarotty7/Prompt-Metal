@@ -1,11 +1,11 @@
 
 import React from 'react';
-import {
-  LayoutDashboard,
-  HardHat,
-  Wallet,
-  Truck,
-  FileCheck,
+import { 
+  LayoutDashboard, 
+  HardHat, 
+  Wallet, 
+  Truck, 
+  FileCheck, 
   BrainCircuit,
   LogOut,
   Home,
@@ -34,13 +34,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
     { id: 'fleet' as ViewState, label: 'Frota & Combustível', icon: <Truck size={20} /> },
     { id: 'team' as ViewState, label: 'Equipe & Organograma', icon: <Users size={20} /> },
     { id: 'compliance' as ViewState, label: 'Compliance & Docs', icon: <FileCheck size={20} /> },
+    { id: 'ai-analysis' as ViewState, label: 'Consultor AI', icon: <BrainCircuit size={20} /> },
   ], []);
 
-  const visibleMenuItems = React.useMemo(() =>
-    userRole === 'admin'
-      ? menuItems
+  const visibleMenuItems = React.useMemo(() => 
+    userRole === 'admin' 
+      ? menuItems 
       : menuItems.filter(item => GUEST_ALLOWED_VIEWS.includes(item.id)),
-    [userRole, menuItems]);
+  [userRole, menuItems]);
 
   return (
     <div className="h-screen w-64 bg-[#0a101f] text-white flex flex-col fixed left-0 top-0 shadow-xl z-50">
@@ -51,11 +52,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
 
       <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto">
         <button
-          onClick={() => onChangeView('home')}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-200 mb-4 border border-slate-700/50"
-        >
-          <Home size={20} />
-          <span className="text-sm">Início</span>
+            onClick={() => onChangeView('home')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-all duration-200 mb-4 border border-slate-700/50"
+          >
+            <Home size={20} />
+            <span className="text-sm">Início</span>
         </button>
 
         <div className="h-px bg-slate-700/50 mx-4 mb-4"></div>
@@ -64,10 +65,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
           <button
             key={item.id}
             onClick={() => onChangeView(item.id)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${currentView === item.id
-              ? 'bg-amber-500 text-slate-900 font-semibold shadow-lg shadow-amber-500/20'
-              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+              currentView === item.id
+                ? 'bg-amber-500 text-slate-900 font-semibold shadow-lg shadow-amber-500/20'
+                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+            }`}
           >
             {item.icon}
             <span className="text-sm">{item.label}</span>
@@ -77,12 +79,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
 
       <div className="p-4 border-t border-slate-800 bg-[#080c17]">
         <div className="mb-4 px-2">
-          <span className="text-xs text-slate-500 uppercase font-bold">Perfil</span>
-          <p className="text-sm text-slate-300 capitalize">{userRole === 'admin' ? 'Administrador' : 'Convidado'}</p>
+            <span className="text-xs text-slate-500 uppercase font-bold">Perfil</span>
+            <p className="text-sm text-slate-300 capitalize">{userRole === 'admin' ? 'Administrador' : 'Convidado'}</p>
         </div>
-        <button
-          onClick={onLogout}
-          className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm w-full"
+        <button 
+            onClick={onLogout} 
+            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm w-full"
         >
           <LogOut size={16} />
           <span>Sair</span>

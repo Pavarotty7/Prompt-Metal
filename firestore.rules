@@ -48,6 +48,11 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
     }
     
+    // Compliance - users can only access their own compliance items
+    match /compliance/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
     // Messages (for demo purposes) - users can only access their own messages
     match /messages/{messageId} {
       allow read, write: if isAuthenticated() && 
