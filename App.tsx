@@ -148,7 +148,17 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (currentView) {
       case 'dashboard': return <Dashboard projects={projects} transactions={transactions} vehicles={vehicles} employees={employees} complianceItems={complianceItems} userRole={userRole} onNavigate={handleViewChange} />;
-      case 'projects': return <ProjectsView projects={projects} onAddProject={handleAddProject} onSelectProject={handleSelectProject} userRole={userRole} />;
+      case 'projects': return (
+        <ProjectsView 
+          projects={projects} 
+          transactions={transactions}
+          complianceItems={complianceItems}
+          employees={employees}
+          onAddProject={handleAddProject} 
+          onSelectProject={handleSelectProject} 
+          userRole={userRole} 
+        />
+      );
       case 'schedule': return <ScheduleView tasks={scheduleTasks} projects={projects} onAddTask={handleAddScheduleTask} onUpdateTask={handleUpdateScheduleTask} userRole={userRole} />;
       case 'project-detail': return activeProject ? <ProjectDetailView project={activeProject} onBack={() => setCurrentView('projects')} userRole={userRole} employees={employees} onUpdateProject={handleUpdateProject} /> : <ProjectsView projects={projects} onAddProject={handleAddProject} onSelectProject={handleSelectProject} userRole={userRole} />;
       case 'finance': return <FinanceView transactions={transactions} projects={projects} userRole={userRole} onAddTransaction={handleAddTransaction} onUpdateTransaction={handleUpdateTransaction} onDeleteTransaction={handleDeleteTransaction} />;

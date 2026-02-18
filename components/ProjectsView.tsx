@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Project, ProjectStatus, UserRole } from '../types';
+import { Project, ProjectStatus, UserRole, Transaction, ChecklistItem, Employee } from '../types';
 import { 
   Calendar as CalendarIcon, 
   User, 
@@ -26,17 +26,31 @@ import {
   Layers,
   Maximize2,
   FileEdit,
-  Tag
+  Tag,
+  ShieldAlert,
+  CreditCard,
+  ClipboardList
 } from 'lucide-react';
 
 interface ProjectsViewProps {
   projects: Project[];
+  transactions?: Transaction[];
+  complianceItems?: ChecklistItem[];
+  employees?: Employee[];
   onAddProject?: (project: Project) => void;
   onSelectProject: (projectId: string) => void;
   userRole?: UserRole;
 }
 
-const ProjectsView: React.FC<ProjectsViewProps> = ({ projects, onAddProject, onSelectProject, userRole }) => {
+const ProjectsView: React.FC<ProjectsViewProps> = ({ 
+  projects, 
+  transactions = [], 
+  complianceItems = [], 
+  employees = [],
+  onAddProject, 
+  onSelectProject, 
+  userRole 
+}) => {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [currentDate, setCurrentDate] = useState(new Date());
   const isAdmin = userRole === 'admin';
@@ -161,11 +175,27 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({ projects, onAddProject, onS
 
     for (let d = 1; d <= totalDays; d++) {
       const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const dayEvents = projects.filter(p => p.startDate === dateString || p.endDate === dateString);
+      
+      // 1. Obras (Início/Fim)
+      const projectEvents = projects.filter(p => p.startDate === dateString || p.endDate === dateString);
+      
+      // 2. Pagamentos a Vencer (Saídas Pendentes)
+      const pendingPayments = transactions.filter(t => t.date === dateString && t.type === 'expense' && t.status === 'Pendente');
+      
+      // 3. Compliances (Vencimentos)
+      const complianceEvents = complianceItems.filter(c => c.deadline === dateString && !c.checked);
+
+      // 4. Recorrência Dia 28 (Cartão e Folha)
+      const isDay28 = d === 28;
 
       days.push(
-        <div key={d} className="h-32 bg-white border border-slate-100 p-2 overflow-y-auto hover:bg-slate-50 transition-colors group">
-          <div className="text-right">
+        <div key={d} className="h-32 bg-white border border-slate-100 p-2 overflow-y-auto hover:bg-slate-50 transition-colors group relative">
+          <div className="flex justify-between items-start">
+             {isDay28 && (
+                <div className="flex gap-1">
+                   <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" title="Fechamento/Vencimento"></div>
+                </div>
+             )}
             <span className={`text-xs font-black ${
               new Date().toISOString().split('T')[0] === dateString 
                 ? 'bg-amber-500 text-white w-6 h-6 inline-flex items-center justify-center rounded-full shadow-md' 
@@ -174,21 +204,54 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({ projects, onAddProject, onS
               {d}
             </span>
           </div>
+          
           <div className="mt-1 space-y-1">
-            {dayEvents.map(project => {
+            {/* Obras */}
+            {projectEvents.map(project => {
               const isStart = project.startDate === dateString;
               return (
                 <div 
-                  key={project.id} 
+                  key={`proj-${project.id}-${isStart ? 's' : 'e'}`} 
                   onClick={() => onSelectProject(project.id)}
-                  className={`text-[8px] p-1 rounded-lg border-l-2 font-black uppercase tracking-tighter truncate cursor-pointer hover:scale-105 transition-all ${
-                    isStart ? 'bg-blue-100 border-blue-600 text-blue-900' : 'bg-red-100 border-red-600 text-red-900'
+                  className={`text-[7px] p-1 rounded border-l-2 font-black uppercase truncate cursor-pointer hover:scale-105 transition-all ${
+                    isStart ? 'bg-blue-50 border-blue-600 text-blue-900' : 'bg-rose-50 border-rose-600 text-rose-900'
                   }`}
                 >
+                  <HardHat size={8} className="inline mr-1" />
                   {isStart ? 'INÍCIO' : 'FIM'}: {project.name}
                 </div>
               );
             })}
+
+            {/* Pagamentos */}
+            {pendingPayments.map(t => (
+              <div key={`pay-${t.id}`} className="text-[7px] p-1 rounded border-l-2 border-emerald-600 bg-emerald-50 text-emerald-900 font-black uppercase truncate">
+                <DollarSign size={8} className="inline mr-1" />
+                PGTO: {t.description}
+              </div>
+            ))}
+
+            {/* Compliances */}
+            {complianceEvents.map(c => (
+              <div key={`comp-${c.id}`} className="text-[7px] p-1 rounded border-l-2 border-purple-600 bg-purple-50 text-purple-900 font-black uppercase truncate">
+                <ShieldAlert size={8} className="inline mr-1" />
+                DOC: {c.text}
+              </div>
+            ))}
+
+            {/* Evento Dia 28 */}
+            {isDay28 && (
+               <div className="space-y-1">
+                  <div className="text-[7px] p-1 rounded border-l-2 border-orange-600 bg-orange-50 text-orange-900 font-black uppercase truncate">
+                    <CreditCard size={8} className="inline mr-1" />
+                    Venc. Cartão
+                  </div>
+                  <div className="text-[7px] p-1 rounded border-l-2 border-indigo-600 bg-indigo-50 text-indigo-900 font-black uppercase truncate">
+                    <ClipboardList size={8} className="inline mr-1" />
+                    Fech. Folha
+                  </div>
+               </div>
+            )}
           </div>
         </div>
       );
@@ -198,7 +261,10 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({ projects, onAddProject, onS
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden animate-fade-in">
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <button onClick={handlePrevMonth} className="p-2 hover:bg-slate-200 rounded-full transition-all text-slate-700"><ChevronLeft size={24} /></button>
-          <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">{monthName}</h3>
+          <div className="text-center">
+             <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">{monthName}</h3>
+             <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.3em]">Agenda Integrada PromptMetal</p>
+          </div>
           <button onClick={handleNextMonth} className="p-2 hover:bg-slate-200 rounded-full transition-all text-slate-700"><ChevronRight size={24} /></button>
         </div>
         <div className="grid grid-cols-7 text-center bg-slate-100 border-b border-slate-200">
@@ -206,7 +272,14 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({ projects, onAddProject, onS
             <div key={day} className="py-3 text-[10px] font-black text-slate-600 uppercase tracking-widest">{day}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7">{days}</div>
+        <div className="grid grid-cols-7 divide-x divide-y divide-slate-100">{days}</div>
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-wrap gap-4 justify-center">
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-blue-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Início Obra</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-rose-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Fim Obra</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-emerald-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Pagamentos</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-purple-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Compliance</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-orange-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Dia 28 (Alertas)</span></div>
+        </div>
       </div>
     );
   };
