@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Project, ProjectStatus, UserRole, Transaction, ChecklistItem, Employee } from '../types';
 import { 
@@ -21,6 +20,8 @@ import {
   Filter,
   CheckCircle2,
   AlertCircle,
+  // Added missing AlertTriangle icon to fix error on line 602
+  AlertTriangle,
   ArrowRight,
   Briefcase,
   Layers,
@@ -29,7 +30,8 @@ import {
   Tag,
   ShieldAlert,
   CreditCard,
-  ClipboardList
+  ClipboardList,
+  Trash2
 } from 'lucide-react';
 
 interface ProjectsViewProps {
@@ -38,6 +40,7 @@ interface ProjectsViewProps {
   complianceItems?: ChecklistItem[];
   employees?: Employee[];
   onAddProject?: (project: Project) => void;
+  onDeleteProject?: (id: string) => void;
   onSelectProject: (projectId: string) => void;
   userRole?: UserRole;
 }
@@ -48,11 +51,13 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
   complianceItems = [], 
   employees = [],
   onAddProject, 
+  onDeleteProject,
   onSelectProject, 
   userRole 
 }) => {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
   const isAdmin = userRole === 'admin';
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -124,6 +129,13 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
         name: '', client: '', address: '', responsible: '', startDate: '', endDate: '', budget: '',
         category: 'Industrial', priority: 'Normal', areaM2: '', description: ''
       });
+    }
+  };
+
+  const handleDeleteConfirm = () => {
+    if (projectToDelete && onDeleteProject) {
+      onDeleteProject(projectToDelete);
+      setProjectToDelete(null);
     }
   };
 
@@ -353,10 +365,9 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
            {filteredProjects.map(project => (
              <div 
                 key={project.id} 
-                onClick={() => onSelectProject(project.id)}
-                className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 hover:shadow-2xl hover:border-slate-800 transition-all cursor-pointer group flex flex-col justify-between min-h-[300px]"
+                className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 hover:shadow-2xl hover:border-slate-800 transition-all group flex flex-col justify-between min-h-[300px] relative"
              >
-                <div>
+                <div onClick={() => onSelectProject(project.id)} className="cursor-pointer">
                   <div className="flex justify-between items-start mb-6">
                     <div className="p-4 bg-slate-900 text-white rounded-2xl group-hover:bg-amber-500 transition-colors">
                       <HardHat size={28} />
@@ -391,8 +402,19 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Término Previsto</span>
                        <span className="text-[10px] font-black text-slate-900 uppercase">{new Date(project.endDate).toLocaleDateString('pt-PT')}</span>
                     </div>
-                    <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 group-hover:bg-slate-900 group-hover:text-white transition-all border border-slate-100">
-                       <ArrowRight size={16} />
+                    <div className="flex gap-2">
+                        {isAdmin && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }} 
+                                className="w-8 h-8 rounded-full bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all border border-red-100"
+                                title="Excluir Obra"
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        )}
+                        <button onClick={() => onSelectProject(project.id)} className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 group-hover:bg-slate-900 group-hover:text-white transition-all border border-slate-100">
+                           <ArrowRight size={16} />
+                        </button>
                     </div>
                   </div>
                 </div>
@@ -571,6 +593,21 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE OBRA */}
+      {projectToDelete && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+           <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in border border-red-200">
+              <div className="w-16 h-16 bg-red-100 text-red-700 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={32}/></div>
+              <h3 className="text-xl font-black text-slate-950 uppercase mb-2">Remover Obra?</h3>
+              <p className="text-slate-700 text-sm mb-8 leading-relaxed italic font-medium">Deseja excluir este projeto permanentemente? Todos os registros vinculados podem ser afetados.</p>
+              <div className="grid grid-cols-2 gap-4">
+                 <button onClick={() => setProjectToDelete(null)} className="py-4 text-slate-700 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 rounded-xl transition-all">Manter</button>
+                 <button onClick={handleDeleteConfirm} className="py-4 bg-red-700 text-white font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-red-800 shadow-xl shadow-red-600/20 transition-all">Excluir</button>
+              </div>
+           </div>
         </div>
       )}
     </div>

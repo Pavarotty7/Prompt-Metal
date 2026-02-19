@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Project, Transaction, UserRole, Vehicle, Employee, ViewState, ChecklistItem } from '../types';
 import HelpTooltip from './HelpTooltip';
 import { 
@@ -19,9 +19,14 @@ import {
   Calendar,
   CheckCircle2,
   Car,
-  CheckSquare
+  CheckSquare,
+  Database,
+  Download,
+  Upload,
+  RefreshCw
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
+import { databaseService } from '../services/databaseService';
 
 interface DashboardProps {
   projects: Project[];
@@ -31,6 +36,7 @@ interface DashboardProps {
   complianceItems?: ChecklistItem[];
   userRole?: UserRole;
   onNavigate: (view: ViewState) => void;
+  onRefreshData?: () => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -40,10 +46,12 @@ const Dashboard: React.FC<DashboardProps> = ({
   employees = [], 
   complianceItems = [],
   userRole, 
-  onNavigate 
+  onNavigate,
+  onRefreshData
 }) => {
   const today = useMemo(() => new Date(), []);
   const isAdmin = userRole === 'admin';
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const stats = useMemo(() => {
     const active = projects.filter(p => p.status === 'Em Andamento').length;
@@ -118,6 +126,38 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const progressFormatter = (val: number) => `${val}%`;
 
+  const handleExportBackup = () => {
+    const data = databaseService.exportDatabase();
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `PromptMetal_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const success = databaseService.importDatabase(content);
+      if (success) {
+        alert("Backup restaurado com sucesso! O sistema será atualizado.");
+        if (onRefreshData) onRefreshData();
+      } else {
+        alert("Falha ao importar backup. Verifique se o arquivo é válido.");
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   if (!hasData) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center text-center p-8">
@@ -128,14 +168,25 @@ const Dashboard: React.FC<DashboardProps> = ({
         <p className="text-slate-600 max-w-md mb-8">
           Seus indicadores aparecerão aqui assim que a diretoria cadastrar a primeira obra ou realizar um lançamento financeiro.
         </p>
-        {isAdmin && (
-          <button 
-             onClick={() => onNavigate('projects')} 
-             className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest flex items-center gap-3 hover:bg-black transition-all shadow-xl active:scale-95"
-          >
-             <Plus size={20} /> Começar por "Obras"
-          </button>
-        )}
+        <div className="flex gap-4">
+            {isAdmin && (
+            <button 
+                onClick={() => onNavigate('projects')} 
+                className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest flex items-center gap-3 hover:bg-black transition-all shadow-xl active:scale-95"
+            >
+                <Plus size={20} /> Começar por "Obras"
+            </button>
+            )}
+            {isAdmin && (
+                <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-white border-2 border-slate-200 text-slate-700 px-8 py-4 rounded-2xl font-black uppercase tracking-widest flex items-center gap-3 hover:bg-slate-50 transition-all shadow-sm"
+                >
+                    <Upload size={20} /> Restaurar Backup
+                </button>
+            )}
+        </div>
+        <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImportBackup} />
       </div>
     );
   }
@@ -147,9 +198,30 @@ const Dashboard: React.FC<DashboardProps> = ({
           <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Painel de Comando</h2>
           <p className="text-slate-600 font-medium">Gestão em tempo real da operação PromptMetal</p>
         </div>
-        <div className="text-[10px] font-black uppercase tracking-widest text-slate-700 bg-white px-3 py-1.5 rounded-lg shadow-sm border border-slate-200">
-          Sync: Hoje, {today.toLocaleTimeString('pt-PT', {hour: '2-digit', minute:'2-digit'})}
+        <div className="flex gap-3">
+            {isAdmin && (
+               <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                    <button 
+                        onClick={handleExportBackup}
+                        className="p-2 text-slate-600 hover:text-emerald-600 transition-all"
+                        title="Exportar Backup JSON"
+                    >
+                        <Download size={18} />
+                    </button>
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-2 text-slate-600 hover:text-blue-600 transition-all"
+                        title="Restaurar do Arquivo"
+                    >
+                        <Upload size={18} />
+                    </button>
+               </div>
+            )}
+            <div className="text-[10px] font-black uppercase tracking-widest text-slate-700 bg-white px-3 py-1.5 rounded-lg shadow-sm border border-slate-200 flex items-center gap-2">
+            Sync: {today.toLocaleTimeString('pt-PT', {hour: '2-digit', minute:'2-digit'})}
+            </div>
         </div>
+        <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleImportBackup} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -298,36 +370,69 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 animate-fade-in">
-        <div className="flex justify-between items-center mb-8">
-           <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg flex items-center gap-3">
-               <Shield size={24} className="text-emerald-600" /> Itens Críticos de Conformidade
-           </h3>
-           <button onClick={() => onNavigate('compliance')} className="text-[10px] font-black text-blue-700 uppercase tracking-widest hover:underline">Ver Auditoria Completa</button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {criticalChecklistItems.map(item => (
-                <div key={item.id} className="p-6 bg-slate-50 border border-slate-200 rounded-3xl group hover:border-emerald-500 transition-all">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="p-2 bg-white rounded-xl border border-slate-200 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-sm">
-                            <CheckSquare size={18} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 animate-fade-in flex flex-col">
+            <div className="flex justify-between items-center mb-8">
+            <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg flex items-center gap-3">
+                <Shield size={24} className="text-emerald-600" /> Itens de Conformidade
+            </h3>
+            <button onClick={() => onNavigate('compliance')} className="text-[10px] font-black text-blue-700 uppercase tracking-widest hover:underline">Ver Todos</button>
+            </div>
+            <div className="space-y-4 flex-1">
+                {criticalChecklistItems.map(item => (
+                    <div key={item.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl group hover:border-emerald-500 transition-all flex justify-between items-center">
+                        <div className="flex items-center gap-4">
+                            <div className="p-2 bg-white rounded-xl border border-slate-200 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                                <CheckSquare size={16} />
+                            </div>
+                            <div>
+                                <p className="text-sm font-black text-slate-900 uppercase tracking-tight leading-tight">{item.text}</p>
+                                <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Prazo: {new Date(item.deadline).toLocaleDateString('pt-PT')}</p>
+                            </div>
                         </div>
-                        <span className="text-[9px] font-black bg-red-100 text-red-800 px-2 py-1 rounded-full uppercase tracking-widest border border-red-200">Obrigatório</span>
+                        <span className="text-[8px] font-black bg-red-100 text-red-800 px-2 py-1 rounded-full uppercase tracking-widest border border-red-200">Crítico</span>
                     </div>
-                    <p className="text-sm font-black text-slate-900 uppercase tracking-tight mb-4 leading-tight">{item.text}</p>
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-700 uppercase tracking-widest">
-                        <Calendar size={14} className="text-slate-900"/> 
-                        Prazo: {new Date(item.deadline).toLocaleDateString('pt-PT')}
+                ))}
+                {criticalChecklistItems.length === 0 && (
+                    <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50">
+                        <CheckCircle2 size={40} className="mx-auto text-emerald-600 mb-4 opacity-20" />
+                        <p className="text-slate-600 text-[10px] font-black uppercase tracking-widest">Conformidade em dia</p>
                     </div>
-                </div>
-            ))}
-            {criticalChecklistItems.length === 0 && (
-                <div className="col-span-3 py-16 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50">
-                    <CheckCircle2 size={48} className="mx-auto text-emerald-600 mb-4 opacity-20" />
-                    <p className="text-slate-600 text-xs font-black uppercase tracking-widest">Todos os itens críticos estão em conformidade</p>
-                </div>
-            )}
+                )}
+            </div>
         </div>
+
+        {isAdmin && (
+            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 animate-fade-in">
+                <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg mb-8 flex items-center gap-3">
+                    <Database size={24} className="text-indigo-600" /> Utilidades de Sistema
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button 
+                        onClick={handleExportBackup}
+                        className="flex flex-col items-center justify-center p-8 bg-slate-900 text-white rounded-[2rem] hover:bg-black transition-all group shadow-xl"
+                    >
+                        <Download size={32} className="text-emerald-500 group-hover:scale-110 transition-transform mb-3" />
+                        <span className="text-xs font-black uppercase tracking-widest">Gerar Backup JSON</span>
+                        <span className="text-[8px] text-slate-400 mt-1 uppercase font-bold tracking-widest">Baixar progresso total</span>
+                    </button>
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex flex-col items-center justify-center p-8 bg-white border-2 border-slate-200 text-slate-900 rounded-[2rem] hover:bg-slate-50 transition-all group shadow-sm"
+                    >
+                        <Upload size={32} className="text-blue-500 group-hover:scale-110 transition-transform mb-3" />
+                        <span className="text-xs font-black uppercase tracking-widest">Restaurar do Arquivo</span>
+                        <span className="text-[8px] text-slate-400 mt-1 uppercase font-bold tracking-widest">Carregar dados externos</span>
+                    </button>
+                    <button 
+                        onClick={() => window.location.reload()}
+                        className="md:col-span-2 flex items-center justify-center gap-3 p-5 bg-slate-100 text-slate-600 rounded-2xl hover:bg-slate-200 transition-all font-black text-[10px] uppercase tracking-[0.3em]"
+                    >
+                        <RefreshCw size={14} /> Sincronizar Interface
+                    </button>
+                </div>
+            </div>
+        )}
       </div>
     </div>
   );

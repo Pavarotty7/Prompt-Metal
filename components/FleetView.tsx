@@ -23,7 +23,8 @@ import {
   ShieldAlert,
   Paperclip,
   Trash2,
-  Files
+  Files,
+  AlertTriangle
 } from 'lucide-react';
 
 interface VehicleWithFuel extends Vehicle {
@@ -41,15 +42,17 @@ interface VehicleWithFuel extends Vehicle {
 interface FleetViewProps {
   vehicles: VehicleWithFuel[];
   onUpdateVehicles?: (vehicles: VehicleWithFuel[]) => void;
+  onDeleteVehicle?: (id: string) => void;
   userRole?: UserRole;
 }
 
-const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userRole }) => {
+const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, onDeleteVehicle, userRole }) => {
   const isAdmin = userRole === 'admin';
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'info' | 'history' | 'fuel' | 'documents'>('info'); 
   const [editingVehicle, setEditingVehicle] = useState<VehicleWithFuel | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
+  const [vehicleToDelete, setVehicleToDelete] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
@@ -184,6 +187,13 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     setIsModalOpen(false);
   };
 
+  const handleDeleteVehicleConfirm = () => {
+    if (vehicleToDelete && onDeleteVehicle) {
+      onDeleteVehicle(vehicleToDelete);
+      setVehicleToDelete(null);
+    }
+  };
+
   const handleAddFuel = () => {
     if (!onUpdateVehicles) return;
     const target = editingVehicle || vehicles.find(v => v.id === fuelForm.vehicleId);
@@ -281,9 +291,16 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
               </div>
               <div className="flex justify-between items-start mb-2">
                 <h3 className="text-xl font-black text-slate-900 uppercase">{vehicle.model}</h3>
-                <button onClick={() => handleOpenEditVehicle(vehicle)} className="text-slate-400 hover:text-slate-900 transition-colors">
-                  <Settings2 size={18} />
-                </button>
+                <div className="flex gap-1">
+                   {isAdmin && (
+                        <button onClick={() => setVehicleToDelete(vehicle.id)} className="text-slate-400 hover:text-red-600 transition-colors p-1.5 rounded-lg hover:bg-red-50">
+                            <Trash2 size={16} />
+                        </button>
+                   )}
+                    <button onClick={() => handleOpenEditVehicle(vehicle)} className="text-slate-400 hover:text-slate-900 transition-colors p-1.5 rounded-lg hover:bg-slate-50">
+                        <Settings2 size={18} />
+                    </button>
+                </div>
               </div>
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded border inline-block mb-4">{vehicle.plate}</p>
               
@@ -647,6 +664,21 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE VIATURA */}
+      {vehicleToDelete && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+           <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in border border-red-200">
+              <div className="w-16 h-16 bg-red-100 text-red-700 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={32}/></div>
+              <h3 className="text-xl font-black text-slate-950 uppercase mb-2">Remover Viatura?</h3>
+              <p className="text-slate-700 text-sm mb-8 leading-relaxed italic font-medium">Deseja excluir este veículo permanentemente da frota? Esta ação removerá todo o histórico de abastecimento e documentos.</p>
+              <div className="grid grid-cols-2 gap-4">
+                 <button onClick={() => setVehicleToDelete(null)} className="py-4 text-slate-700 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 rounded-xl transition-all">Manter</button>
+                 <button onClick={handleDeleteVehicleConfirm} className="py-4 bg-red-700 text-white font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-red-800 shadow-xl shadow-red-600/20 transition-all">Excluir</button>
+              </div>
+           </div>
         </div>
       )}
 

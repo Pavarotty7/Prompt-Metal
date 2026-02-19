@@ -20,6 +20,30 @@ const setLocal = <T>(key: string, data: T[]): void => {
 };
 
 export const databaseService = {
+  // Backup e Restauração
+  exportDatabase: () => {
+    const backup: Record<string, any> = {};
+    Object.entries(STORAGE_KEYS).forEach(([key, storageKey]) => {
+      backup[key] = getLocal(storageKey);
+    });
+    return JSON.stringify(backup, null, 2);
+  },
+
+  importDatabase: (jsonString: string) => {
+    try {
+      const data = JSON.parse(jsonString);
+      Object.entries(STORAGE_KEYS).forEach(([key, storageKey]) => {
+        if (data[key]) {
+          setLocal(storageKey, data[key]);
+        }
+      });
+      return true;
+    } catch (e) {
+      console.error("Erro ao importar backup:", e);
+      return false;
+    }
+  },
+
   // Projetos
   getProjects: () => getLocal<Project>(STORAGE_KEYS.PROJECTS),
   saveProject: (project: Project) => {
@@ -28,6 +52,10 @@ export const databaseService = {
     if (index >= 0) projects[index] = project;
     else projects.unshift(project);
     setLocal(STORAGE_KEYS.PROJECTS, projects);
+  },
+  deleteProject: (id: string) => {
+    const items = getLocal<Project>(STORAGE_KEYS.PROJECTS).filter(i => i.id !== id);
+    setLocal(STORAGE_KEYS.PROJECTS, items);
   },
 
   // Transações
@@ -57,6 +85,10 @@ export const databaseService = {
   // Veículos
   getVehicles: () => getLocal<Vehicle>(STORAGE_KEYS.VEHICLES),
   saveVehicles: (vehicles: Vehicle[]) => setLocal(STORAGE_KEYS.VEHICLES, vehicles),
+  deleteVehicle: (id: string) => {
+    const items = getLocal<Vehicle>(STORAGE_KEYS.VEHICLES).filter(i => i.id !== id);
+    setLocal(STORAGE_KEYS.VEHICLES, items);
+  },
 
   // Timesheet
   getTimesheets: () => getLocal<TimesheetRecord>(STORAGE_KEYS.TIMESHEETS),
