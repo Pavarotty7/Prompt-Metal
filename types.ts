@@ -3,10 +3,21 @@ export enum ProjectStatus {
   PLANNED = 'Planejada',
   IN_PROGRESS = 'Em Andamento',
   COMPLETED = 'Concluída',
-  DELAYED = 'Atrasada'
+  DELAYED = 'Atrasada',
+  WAITING_DOCUMENT = 'Aguardando Documento'
 }
 
 export type UserRole = 'admin' | 'guest' | null;
+
+export type TaskStatus = 'Planeamento' | 'Preparação' | 'Em Execução' | 'Finalizada';
+
+export interface BudgetTask {
+  id: string;
+  nome: string;
+  percentualTotal: number; // Peso da tarefa na obra (ex: 20%)
+  percentualConcluido: number; // Progresso dentro da tarefa (0-100)
+  status: TaskStatus;
+}
 
 export interface ProjectDocument {
   id: string;
@@ -18,24 +29,16 @@ export interface ProjectDocument {
   fileName: string;
 }
 
-export interface ProjectStage {
-  id: string;
-  name: string;
-  progress: number;
-  status: 'Pendente' | 'Em Execução' | 'Concluído';
-  weight: number; // Peso da etapa na obra total (default 1)
-}
-
 export interface MaterialLog {
   id: string;
   projectId: string;
   date: string;
   materialName: string;
   quantity: number;
-  unit: string; // kg, m2, un, sc
+  unit: string;
   unitPrice: number;
   supplier: string;
-  invoice: string; // NF
+  invoice: string;
   type: 'entrada' | 'saida';
   notes?: string;
   attachmentName?: string;
@@ -53,14 +56,16 @@ export interface Project {
   status: ProjectStatus;
   budget: number;
   spent: number;
-  progress: number; // 0-100
-  stages?: ProjectStage[];
+  progress: number;
+  tarefas?: BudgetTask[]; // Lista de tarefas da planilha orçamentária
   documents?: ProjectDocument[];
   materialLogs?: MaterialLog[];
   category: 'Industrial' | 'Comercial' | 'Residencial' | 'Metalomecânica' | 'Civil';
   priority: 'Baixa' | 'Normal' | 'Urgente';
   areaM2?: number;
   description?: string;
+  dataCriacao?: string;
+  ownerId?: string;
 }
 
 export interface SubTask {
@@ -79,8 +84,8 @@ export interface ScheduleTask {
   endDate: string;
   status: 'Pendente' | 'Em Execução' | 'Concluído' | 'Atrasado';
   priority: 'Alta' | 'Média' | 'Baixa';
-  progress: number; // 0-100%
-  subTasks?: SubTask[]; // Detalhamento de mão de obra
+  progress: number;
+  subTasks?: SubTask[];
 }
 
 export interface Transaction {
@@ -97,7 +102,6 @@ export interface Transaction {
   attachmentUrl?: string;
 }
 
-// Interface para transações de cartão corporativo para resolver erros de importação
 export interface CorporateCardTransaction {
   id: string;
   employeeId: string;
@@ -117,20 +121,19 @@ export interface VehicleDocument {
   type: 'Seguro' | 'IPO' | 'IUC' | 'Documento Único' | 'Outros';
   expiryDate?: string;
   uploadDate: string;
-  url?: string; // URL para visualização do documento
+  url?: string;
   fileName?: string;
 }
 
 export interface MaintenanceRecord {
   id: string;
   date: string;
-  type: string; // Ex: Troca de óleo, Pneus, Revisão
+  type: string;
   cost: number;
   description: string;
   receiptUrl?: string;
 }
 
-// Interface para logs de abastecimento para resolver erros de importação
 export interface FuelLog {
   id: string;
   date: string;
@@ -151,10 +154,10 @@ export interface Vehicle {
   driver: string;
   lastMaintenance: string;
   nextMaintenance: string;
-  annualInspectionDate?: string; // Nova data de inspeção
-  documents?: VehicleDocument[]; // Lista de documentos
-  maintenanceHistory?: MaintenanceRecord[]; // Histórico de manutenções
-  fuelHistory?: FuelLog[]; // Histórico de abastecimentos
+  annualInspectionDate?: string;
+  documents?: VehicleDocument[];
+  maintenanceHistory?: MaintenanceRecord[];
+  fuelHistory?: FuelLog[];
   status: 'Operacional' | 'Manutenção';
 }
 
@@ -165,8 +168,8 @@ export interface Employee {
   role: string; 
   type: 'CLT' | 'PJ' | 'Terceiro';
   category: 'Administrative' | 'Operational'; 
-  allocationId: string; // Pode ser ID de Obra ou ID de Departamento
-  allocationType: 'project' | 'department'; // Tipo da alocação
+  allocationId: string;
+  allocationType: 'project' | 'department';
   baseRate?: number; 
   hasCorporateCard?: boolean;
   cardLimit?: number;
@@ -191,12 +194,12 @@ export interface TimesheetRecord {
   attachment?: string; 
 }
 
-export interface ChecklistItem {
+export interface DailyNote {
   id: string;
-  text: string;
-  checked: boolean;
-  critical: boolean;
-  deadline: string;
+  date: string;
+  content: string;
+  priority: 'Baixa' | 'Média' | 'Alta' | 'Crítica';
+  completed: boolean;
 }
 
-export type ViewState = 'home' | 'dashboard' | 'projects' | 'schedule' | 'finance' | 'fleet' | 'compliance' | 'ai-analysis' | 'team' | 'project-detail' | 'timesheet' | 'corporate-cards';
+export type ViewState = 'home' | 'dashboard' | 'projects' | 'schedule' | 'finance' | 'fleet' | 'ai-analysis' | 'team' | 'project-detail' | 'timesheet' | 'corporate-cards' | 'notes';

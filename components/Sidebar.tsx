@@ -11,7 +11,8 @@ import {
   Home,
   Users,
   ClipboardList,
-  CreditCard
+  CreditCard,
+  StickyNote
 } from 'lucide-react';
 import { ViewState, UserRole } from '../types';
 
@@ -22,7 +23,7 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-const GUEST_ALLOWED_VIEWS: ViewState[] = ['dashboard', 'projects', 'team'];
+const GUEST_ALLOWED_VIEWS: ViewState[] = ['dashboard', 'projects', 'team', 'notes'];
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, onLogout }) => {
   const menuItems = React.useMemo(() => [
@@ -33,7 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
     { id: 'corporate-cards' as ViewState, label: 'Cartões Corporativos', icon: <CreditCard size={20} /> },
     { id: 'fleet' as ViewState, label: 'Frota & Combustível', icon: <Truck size={20} /> },
     { id: 'team' as ViewState, label: 'Equipe & Organograma', icon: <Users size={20} /> },
-    { id: 'compliance' as ViewState, label: 'Compliance & Docs', icon: <FileCheck size={20} /> },
+    { id: 'notes' as ViewState, label: 'Anotações Diárias', icon: <StickyNote size={20} /> },
     { id: 'ai-analysis' as ViewState, label: 'Consultor AI', icon: <BrainCircuit size={20} /> },
   ], []);
 

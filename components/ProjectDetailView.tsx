@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Project, MaterialLog, ProjectStage, UserRole, Employee, ProjectDocument } from '../types';
+import { Project, MaterialLog, UserRole, Employee, ProjectDocument, BudgetTask, ProjectStatus } from '../types';
+import BudgetProgressManager from './BudgetProgressManager';
 import { 
   ArrowLeft, 
   Package, 
@@ -10,26 +11,22 @@ import {
   X,
   DollarSign,
   UploadCloud,
-  Activity,
   Calendar,
-  Construction,
   Paperclip,
   MapPin,
   User,
-  Calculator,
-  Tag,
   Files,
   Eye,
-  AlertCircle,
   Ban,
-  Download,
   Users,
   CheckCircle2,
   Trash2,
   Briefcase,
   Save,
-  Coins,
-  Truck
+  Truck,
+  ListChecks,
+  Clock,
+  Pencil
 } from 'lucide-react';
 
 interface ProjectDetailViewProps {
@@ -40,21 +37,13 @@ interface ProjectDetailViewProps {
   onUpdateProject?: (project: Project) => void;
 }
 
-type TabType = 'metrics' | 'materials' | 'team' | 'statement' | 'documents';
+type TabType = 'budget-progress' | 'materials' | 'team' | 'statement' | 'documents';
 
 const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, userRole, employees = [], onUpdateProject }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('metrics');
+  const [activeTab, setActiveTab] = useState<TabType>('budget-progress');
   const isAdmin = userRole === 'admin';
   const materialFileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
-
-  const stages = useMemo<ProjectStage[]>(() => project.stages || [
-    { id: 's1', name: 'Mobilização de Estaleiro', progress: 0, status: 'Pendente', weight: 5 },
-    { id: 's2', name: 'Serralharia Estrutural', progress: 0, status: 'Pendente', weight: 40 },
-    { id: 's3', name: 'Montagem Mecânica', progress: 0, status: 'Pendente', weight: 30 },
-    { id: 's4', name: 'Instalação Elétrica', progress: 0, status: 'Pendente', weight: 15 },
-    { id: 's5', name: 'Acabamentos e Pintura', progress: 0, status: 'Pendente', weight: 10 },
-  ], [project.stages]);
 
   const materials = useMemo(() => project.materialLogs || [], [project.materialLogs]);
   const projectDocuments = useMemo(() => project.documents || [], [project.documents]);
@@ -64,6 +53,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
   [employees, project.id]);
 
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
   
@@ -84,34 +74,13 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
   });
   const [docAttachment, setDocAttachment] = useState<File | null>(null);
 
-  const handleUpdateStageProgress = (id: string, newProgress: number) => {
-    if (!isAdmin || !onUpdateProject) return;
-    const updatedStages: ProjectStage[] = stages.map(s => {
-      if (s.id === id) {
-        const status: 'Pendente' | 'Em Execução' | 'Concluído' = newProgress === 100 ? 'Concluído' : newProgress > 0 ? 'Em Execução' : 'Pendente';
-        return { ...s, progress: newProgress, status };
-      }
-      return s;
-    });
-    
-    onUpdateProject({ ...project, stages: updatedStages, progress: calculateOverallProgressFromStages(updatedStages) });
-  };
-
-  const calculateOverallProgressFromStages = (stgs: ProjectStage[]) => {
-    const totalWeight = stgs.reduce((acc, s) => acc + s.weight, 0);
-    const weightedProgress = stgs.reduce((acc, s) => acc + (s.progress * (s.weight / totalWeight)), 0);
-    return Math.round(weightedProgress);
-  };
-
-  const calculateOverallProgress = useMemo(() => calculateOverallProgressFromStages(stages), [stages]);
+  const [newChecklistItem, setNewChecklistItem] = useState({ text: '', critical: false, deadline: '' });
 
   const handleSaveMaterial = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin || !onUpdateProject) return;
 
-    const newMaterial: MaterialLog = {
-      id: Math.random().toString(36).substr(2, 9),
-      projectId: project.id,
+    const materialData = {
       materialName: materialForm.materialName,
       quantity: Number(materialForm.quantity),
       unit: materialForm.unit,
@@ -119,22 +88,89 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
       date: materialForm.date,
       supplier: materialForm.supplier,
       invoice: materialForm.invoice,
-      type: 'entrada',
       attachmentName: materialAttachment?.name,
       attachmentUrl: materialAttachment ? URL.createObjectURL(materialAttachment) : undefined
     };
 
-    const costIncrease = newMaterial.quantity * newMaterial.unitPrice;
+    let updatedMaterialLogs = [...(project.materialLogs || [])];
+    let newSpent = project.spent;
+
+    if (editingMaterialId) {
+      const index = updatedMaterialLogs.findIndex(m => m.id === editingMaterialId);
+      if (index !== -1) {
+        const oldMaterial = updatedMaterialLogs[index];
+        const oldCost = oldMaterial.quantity * oldMaterial.unitPrice;
+        const newCost = materialData.quantity * materialData.unitPrice;
+        
+        updatedMaterialLogs[index] = {
+          ...oldMaterial,
+          ...materialData,
+          attachmentName: materialData.attachmentName || oldMaterial.attachmentName,
+          attachmentUrl: materialData.attachmentUrl || oldMaterial.attachmentUrl
+        };
+        newSpent = project.spent - oldCost + newCost;
+      }
+    } else {
+      const newMaterial: MaterialLog = {
+        id: Math.random().toString(36).substr(2, 9),
+        projectId: project.id,
+        ...materialData,
+        type: 'entrada'
+      };
+      updatedMaterialLogs = [newMaterial, ...updatedMaterialLogs];
+      newSpent = project.spent + (newMaterial.quantity * newMaterial.unitPrice);
+    }
 
     onUpdateProject({
       ...project,
-      materialLogs: [newMaterial, ...(project.materialLogs || [])],
-      spent: project.spent + costIncrease
+      materialLogs: updatedMaterialLogs,
+      spent: newSpent
     });
 
     setIsMaterialModalOpen(false);
+    setEditingMaterialId(null);
     setMaterialForm({ date: new Date().toISOString().split('T')[0], materialName: '', quantity: '', unit: 'un', unitPrice: '', supplier: '', invoice: '' });
     setMaterialAttachment(null);
+  };
+
+  const handleEditMaterial = (material: MaterialLog) => {
+    setEditingMaterialId(material.id);
+    setMaterialForm({
+      date: material.date,
+      materialName: material.materialName,
+      quantity: material.quantity.toString(),
+      unit: material.unit,
+      unitPrice: material.unitPrice.toString(),
+      supplier: material.supplier,
+      invoice: material.invoice
+    });
+    setIsMaterialModalOpen(true);
+  };
+
+  const handleDeleteMaterial = (id: string) => {
+    if (!isAdmin || !onUpdateProject) return;
+    if (!confirm("Confirmar exclusão deste material?")) return;
+
+    const materialToDelete = project.materialLogs?.find(m => m.id === id);
+    if (!materialToDelete) return;
+
+    const costReduction = materialToDelete.quantity * materialToDelete.unitPrice;
+    const updatedLogs = (project.materialLogs || []).filter(m => m.id !== id);
+
+    onUpdateProject({
+      ...project,
+      materialLogs: updatedLogs,
+      spent: Math.max(0, project.spent - costReduction)
+    });
+  };
+
+  const handleUpdateBudgetTasks = (newTasks: BudgetTask[], newTotalProgress: number) => {
+    if (!onUpdateProject) return;
+    onUpdateProject({
+      ...project,
+      tarefas: newTasks,
+      progress: newTotalProgress
+    });
   };
 
   const handleSaveDoc = (e: React.FormEvent) => {
@@ -171,6 +207,23 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     });
   };
 
+  const getStatusClass = (status: ProjectStatus) => {
+    switch (status) {
+      case ProjectStatus.PLANNED: return 'bg-slate-100 text-slate-700 border-slate-200';
+      case ProjectStatus.IN_PROGRESS: return 'bg-blue-100 text-blue-800 border-blue-200';
+      case ProjectStatus.COMPLETED: return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case ProjectStatus.DELAYED: return 'bg-red-100 text-red-800 border-red-200';
+      case ProjectStatus.WAITING_DOCUMENT: return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      default: return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+  };
+
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (!isAdmin || !onUpdateProject) return;
+    const newStatus = e.target.value as ProjectStatus;
+    onUpdateProject({ ...project, status: newStatus });
+  };
+
   return (
     <div className="space-y-6 animate-fade-in pb-16">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
@@ -178,11 +231,23 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
           <ArrowLeft size={16} /> Voltar para Obras
         </button>
         <div className="flex gap-2">
-            <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase border ${
-                project.status === 'Em Andamento' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
-            }`}>
+          {isAdmin ? (
+            <select 
+              value={project.status} 
+              onChange={handleStatusChange}
+              className={`px-4 py-1 rounded-full text-[10px] font-black uppercase border appearance-none outline-none cursor-pointer transition-all ${getStatusClass(project.status)}`}
+            >
+              <option value={ProjectStatus.PLANNED}>Planejada</option>
+              <option value={ProjectStatus.IN_PROGRESS}>Em Andamento</option>
+              <option value={ProjectStatus.COMPLETED}>Concluída</option>
+              <option value={ProjectStatus.DELAYED}>Atrasada</option>
+              <option value={ProjectStatus.WAITING_DOCUMENT}>Aguardando Documento</option>
+            </select>
+          ) : (
+            <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase border ${getStatusClass(project.status)}`}>
                 {project.status}
             </span>
+          )}
         </div>
       </div>
 
@@ -220,65 +285,32 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
              <div className="relative w-32 h-32 mb-4">
                 <svg className="w-full h-full transform -rotate-90">
                    <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-slate-200" />
-                   <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="12" fill="transparent" strokeDasharray={364.4} strokeDashoffset={364.4 - (364.4 * calculateOverallProgress) / 100} className="text-slate-900 transition-all duration-1000" />
+                   <circle cx="64" cy="64" r="58" stroke="currentColor" strokeWidth="12" fill="transparent" strokeDasharray={364.4} strokeDashoffset={364.4 - (364.4 * project.progress) / 100} className="text-slate-900 transition-all duration-1000" />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                   <span className="text-2xl font-black text-slate-900">{calculateOverallProgress}%</span>
+                   <span className="text-2xl font-black text-slate-900">{project.progress}%</span>
                 </div>
              </div>
-             <p className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em]">Progresso Físico</p>
+             <p className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em]">Progresso Real</p>
           </div>
         </div>
 
         <div className="flex bg-slate-900 p-2 gap-1 overflow-x-auto no-scrollbar print:hidden">
-            {(['metrics', 'materials', 'documents', 'team', 'statement'] as const).map(tab => (
+            {(['budget-progress', 'materials', 'documents', 'team', 'statement'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 min-w-[140px] py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === tab ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}>
-                {tab === 'metrics' ? 'Progresso' : tab === 'materials' ? 'Materiais' : tab === 'documents' ? 'Arquivo Técnico' : tab === 'team' ? 'Equipe' : 'Extrato'}
+                {tab === 'budget-progress' ? 'Planilha de Progresso' : tab === 'materials' ? 'Materiais' : tab === 'documents' ? 'Arquivo Técnico' : tab === 'team' ? 'Equipe' : 'Extrato'}
               </button>
             ))}
         </div>
       </div>
 
       <div className="animate-fade-in">
-        {activeTab === 'metrics' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2"><Construction size={18} className="text-slate-900" /> Cronograma de Execução</h3>
-                <div className="space-y-6">
-                    {stages.map(stage => (
-                        <div key={stage.id} className="space-y-2 group">
-                            <div className="flex justify-between items-end">
-                                <div><p className="text-xs font-black text-slate-900 uppercase">{stage.name}</p><p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">Peso: {stage.weight}% • Status: {stage.status}</p></div>
-                                <span className="text-[10px] font-black text-slate-900">{stage.progress}%</span>
-                            </div>
-                            <div className="h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 relative border border-slate-200">
-                                <div className={`h-full rounded-full transition-all duration-700 ${stage.progress === 100 ? 'bg-emerald-500' : 'bg-slate-900'}`} style={{ width: `${stage.progress}%` }} />
-                                {isAdmin && (
-                                    <input type="range" min="0" max="100" value={stage.progress} onChange={(e) => handleUpdateStageProgress(stage.id, parseInt(e.target.value))} className="absolute inset-0 opacity-0 cursor-pointer print:hidden" />
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-             </div>
-             <div className="bg-slate-900 p-10 rounded-[2.5rem] text-white flex flex-col justify-between print:bg-white print:text-black print:border print:border-slate-200">
-                <div>
-                   <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em] mb-6 print:text-amber-600">Eficiência & QA</h3>
-                   <div className="flex items-center gap-6">
-                      <div className="p-5 bg-white/10 rounded-3xl print:bg-slate-100"><Activity size={32} className="text-amber-500 print:text-amber-600" /></div>
-                      <div><p className="text-2xl font-black text-white print:text-black">{(calculateOverallProgress > 0 ? 94.2 : 0).toFixed(1)}%</p><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest print:text-slate-600">Pontuação de Qualidade</p></div>
-                   </div>
-                </div>
-                <div className="pt-10 print:hidden">
-                   <button 
-                      onClick={() => window.print()}
-                      className="w-full py-5 bg-white text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-100 transition-all flex items-center justify-center gap-3 shadow-xl"
-                   >
-                      <FileText size={18} /> Gerar Relatório Diário (RDO)
-                   </button>
-                </div>
-             </div>
-          </div>
+        {activeTab === 'budget-progress' && (
+          <BudgetProgressManager 
+            project={project} 
+            isAdmin={isAdmin} 
+            onUpdateTasks={handleUpdateBudgetTasks} 
+          />
         )}
 
         {activeTab === 'materials' && (
@@ -290,7 +322,14 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
              <div className="overflow-x-auto">
                 <table className="w-full text-left">
                     <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">Data</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">Material</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">NF</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-center">Quant.</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-right">Total (€)</th><th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-center">Comprovante</th></tr>
+                        <tr>
+                          <th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">Data</th>
+                          <th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">Material</th>
+                          <th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest">NF</th>
+                          <th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-center">Quant.</th>
+                          <th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-right">Total (€)</th>
+                          <th className="py-5 px-8 text-[9px] font-black text-slate-700 uppercase tracking-widest text-center">Ações</th>
+                        </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                     {materials.length > 0 ? materials.map(m => (
@@ -300,7 +339,25 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                             <td className="py-5 px-8"><span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded text-[10px] font-black uppercase border border-slate-200">{m.invoice}</span></td>
                             <td className="py-5 px-8 text-xs font-black text-center text-slate-900">{m.quantity} {m.unit}</td>
                             <td className="py-5 px-8 text-sm font-black text-right text-emerald-800">{(m.quantity * m.unitPrice).toLocaleString('pt-PT', {minimumFractionDigits: 2})}</td>
-                            <td className="py-5 px-8 text-center">{m.attachmentUrl ? (<button onClick={() => setViewingAttachment(m.attachmentUrl!)} className="p-2 bg-slate-900 text-white rounded-xl hover:bg-black transition-all shadow-md"><Paperclip size={14} /></button>) : (<span className="text-slate-400">—</span>)}</td>
+                            <td className="py-5 px-8">
+                              <div className="flex items-center justify-center gap-2">
+                                {m.attachmentUrl && (
+                                  <button onClick={() => setViewingAttachment(m.attachmentUrl!)} className="p-2 text-slate-400 hover:text-slate-900 transition-all" title="Ver Anexo">
+                                    <Paperclip size={14} />
+                                  </button>
+                                )}
+                                {isAdmin && (
+                                  <>
+                                    <button onClick={() => handleEditMaterial(m)} className="p-2 text-slate-400 hover:text-indigo-600 transition-all" title="Editar">
+                                      <Pencil size={14} />
+                                    </button>
+                                    <button onClick={() => handleDeleteMaterial(m.id)} className="p-2 text-slate-400 hover:text-red-600 transition-all" title="Excluir">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
                         </tr>
                     )) : (
                         <tr>
@@ -412,8 +469,11 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
            <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-in border border-white/10 flex flex-col max-h-[95vh]">
               <div className="bg-slate-900 p-8 flex justify-between items-center text-white shrink-0">
-                 <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3"><Package size={24} className="text-amber-500" /> Registrar Entrada de Material</h3>
-                 <button onClick={() => setIsMaterialModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
+                 <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
+                   <Package size={24} className="text-amber-500" /> 
+                   {editingMaterialId ? 'Editar Registro de Material' : 'Registrar Entrada de Material'}
+                 </h3>
+                 <button onClick={() => { setIsMaterialModalOpen(false); setEditingMaterialId(null); }} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
               </div>
               <form onSubmit={handleSaveMaterial} className="p-8 space-y-6 overflow-y-auto">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -465,9 +525,9 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                     </div>
                  </div>
                  <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
-                    <button type="button" onClick={() => setIsMaterialModalOpen(false)} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                    <button type="button" onClick={() => { setIsMaterialModalOpen(false); setEditingMaterialId(null); }} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
                     <button type="submit" className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2">
-                       <Save size={18} className="text-amber-500" /> Salvar Material
+                       <Save size={18} className="text-amber-500" /> {editingMaterialId ? 'Atualizar Material' : 'Salvar Material'}
                     </button>
                  </div>
               </form>
@@ -539,6 +599,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
            </div>
         </div>
       )}
+
     </div>
   );
 };

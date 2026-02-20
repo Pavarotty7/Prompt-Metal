@@ -1,5 +1,7 @@
+
 import React, { useState, useMemo } from 'react';
-import { Project, ProjectStatus, UserRole, Transaction, ChecklistItem, Employee } from '../types';
+import { Project, ProjectStatus, UserRole, Transaction, Employee, BudgetTask } from '../types';
+import { distributeWeights } from '../services/budgetService';
 import { 
   Calendar as CalendarIcon, 
   User, 
@@ -20,50 +22,123 @@ import {
   Filter,
   CheckCircle2,
   AlertCircle,
-  // Added missing AlertTriangle icon to fix error on line 602
-  AlertTriangle,
   ArrowRight,
   Briefcase,
   Layers,
   Maximize2,
   FileEdit,
   Tag,
-  ShieldAlert,
   CreditCard,
   ClipboardList,
-  Trash2
+  ListChecks,
+  FileWarning
 } from 'lucide-react';
 
 interface ProjectsViewProps {
   projects: Project[];
   transactions?: Transaction[];
-  complianceItems?: ChecklistItem[];
   employees?: Employee[];
   onAddProject?: (project: Project) => void;
-  onDeleteProject?: (id: string) => void;
   onSelectProject: (projectId: string) => void;
   userRole?: UserRole;
 }
 
+const CONSTRUCTION_STAGES = [
+  {
+    category: 'Preparação e Planeamento',
+    tasks: [
+      'Análise do projeto (arquitetura e especialidades)',
+      'Compatibilização de projetos',
+      'Obtenção de licenças e alvarás',
+      'Planeamento da obra (cronograma)',
+      'Orçamentação detalhada',
+      'Contratação de subempreiteiros',
+      'Plano de Segurança e Saúde (PSS)',
+      'Plano de Gestão de Resíduos (RCD)',
+      'Levantamento topográfico',
+      'Marcação da implantação'
+    ]
+  },
+  {
+    category: 'Montagem do Estaleiro',
+    tasks: [
+      'Vedação do terreno',
+      'Portão de acesso',
+      'Placa de obra obrigatória',
+      'Instalação de contentores',
+      'Instalação sanitária provisória',
+      'Ligação provisória de água',
+      'Ligação provisória de eletricidade',
+      'Zona de armazenamento de materiais',
+      'Zona de resíduos',
+      'Acessos provisórios e circulação interna',
+      'Sinalização de segurança'
+    ]
+  },
+  {
+    category: 'Movimentos de Terra',
+    tasks: [
+      'Limpeza do terreno',
+      'Decapagem da terra vegetal',
+      'Escavações para fundações',
+      'Escavações para redes enterradas',
+      'Regularização do fundo de caixa',
+      'Aterros e compactações',
+      'Drenagens periféricas'
+    ]
+  },
+  {
+    category: 'Fundações e Estrutura',
+    tasks: [
+      'Betão de limpeza',
+      'Cofragem das fundações',
+      'Colocação de armaduras',
+      'Betonagem das fundações',
+      'Impermeabilização de fundações',
+      'Muros de fundação ou cave',
+      'Pilares',
+      'Vigas',
+      'Lajes',
+      'Escadas estruturais',
+      'Descofragem',
+      'Cura do betão'
+    ]
+  },
+  {
+    category: 'Entrega da Obra',
+    tasks: [
+      'Limpeza grossa da obra',
+      'Limpeza fina',
+      'Remoção do estaleiro',
+      'Revisão final',
+      'Vistoria com o cliente',
+      'Correção de anomalias',
+      'Entrega das chaves',
+      'Início do período de garantia'
+    ]
+  }
+];
+
+const ALL_DEFAULT_TASKS = CONSTRUCTION_STAGES.flatMap(s => s.tasks);
+
 const ProjectsView: React.FC<ProjectsViewProps> = ({ 
   projects, 
   transactions = [], 
-  complianceItems = [], 
   employees = [],
   onAddProject, 
-  onDeleteProject,
   onSelectProject, 
   userRole 
 }) => {
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
   const isAdmin = userRole === 'admin';
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
+  
   const [formData, setFormData] = useState({
     name: '',
     client: '',
@@ -95,6 +170,12 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const toggleTaskSelection = (task: string) => {
+    setSelectedTasks(prev => 
+      prev.includes(task) ? prev.filter(t => t !== task) : [...prev, task]
+    );
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) return;
@@ -105,6 +186,9 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
     }
 
     if (onAddProject) {
+      // Distribui os pesos automaticamente para as tarefas selecionadas
+      const distributedTasks = distributeWeights(selectedTasks);
+
       const newProject: Project = {
         id: Math.random().toString(36).substr(2, 9),
         name: formData.name,
@@ -117,25 +201,21 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
         budget: parseFloat(formData.budget) || 0,
         spent: 0,
         progress: 0,
+        tarefas: distributedTasks,
         category: formData.category,
         priority: formData.priority,
         areaM2: parseFloat(formData.areaM2) || undefined,
-        description: formData.description
+        description: formData.description,
+        dataCriacao: new Date().toISOString()
       };
       
       onAddProject(newProject);
       setIsFormOpen(false);
+      setSelectedTasks(ALL_DEFAULT_TASKS);
       setFormData({
         name: '', client: '', address: '', responsible: '', startDate: '', endDate: '', budget: '',
         category: 'Industrial', priority: 'Normal', areaM2: '', description: ''
       });
-    }
-  };
-
-  const handleDeleteConfirm = () => {
-    if (projectToDelete && onDeleteProject) {
-      onDeleteProject(projectToDelete);
-      setProjectToDelete(null);
     }
   };
 
@@ -145,6 +225,7 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
       [ProjectStatus.IN_PROGRESS]: 'bg-blue-100 text-blue-800 border-blue-200',
       [ProjectStatus.COMPLETED]: 'bg-emerald-100 text-emerald-800 border-emerald-200',
       [ProjectStatus.DELAYED]: 'bg-red-100 text-red-800 border-red-200',
+      [ProjectStatus.WAITING_DOCUMENT]: 'bg-yellow-100 text-yellow-800 border-yellow-200',
     };
     
     const icons = {
@@ -152,6 +233,7 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
       [ProjectStatus.IN_PROGRESS]: <Activity size={12} />,
       [ProjectStatus.COMPLETED]: <CheckCircle2 size={12} />,
       [ProjectStatus.DELAYED]: <AlertCircle size={12} />,
+      [ProjectStatus.WAITING_DOCUMENT]: <FileWarning size={12} />,
     };
 
     return (
@@ -187,17 +269,8 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
 
     for (let d = 1; d <= totalDays; d++) {
       const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      
-      // 1. Obras (Início/Fim)
       const projectEvents = projects.filter(p => p.startDate === dateString || p.endDate === dateString);
-      
-      // 2. Pagamentos a Vencer (Saídas Pendentes)
       const pendingPayments = transactions.filter(t => t.date === dateString && t.type === 'expense' && t.status === 'Pendente');
-      
-      // 3. Compliances (Vencimentos)
-      const complianceEvents = complianceItems.filter(c => c.deadline === dateString && !c.checked);
-
-      // 4. Recorrência Dia 28 (Cartão e Folha)
       const isDay28 = d === 28;
 
       days.push(
@@ -218,7 +291,6 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
           </div>
           
           <div className="mt-1 space-y-1">
-            {/* Obras */}
             {projectEvents.map(project => {
               const isStart = project.startDate === dateString;
               return (
@@ -235,7 +307,6 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
               );
             })}
 
-            {/* Pagamentos */}
             {pendingPayments.map(t => (
               <div key={`pay-${t.id}`} className="text-[7px] p-1 rounded border-l-2 border-emerald-600 bg-emerald-50 text-emerald-900 font-black uppercase truncate">
                 <DollarSign size={8} className="inline mr-1" />
@@ -243,15 +314,6 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
               </div>
             ))}
 
-            {/* Compliances */}
-            {complianceEvents.map(c => (
-              <div key={`comp-${c.id}`} className="text-[7px] p-1 rounded border-l-2 border-purple-600 bg-purple-50 text-purple-900 font-black uppercase truncate">
-                <ShieldAlert size={8} className="inline mr-1" />
-                DOC: {c.text}
-              </div>
-            ))}
-
-            {/* Evento Dia 28 */}
             {isDay28 && (
                <div className="space-y-1">
                   <div className="text-[7px] p-1 rounded border-l-2 border-orange-600 bg-orange-50 text-orange-900 font-black uppercase truncate">
@@ -289,7 +351,6 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
             <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-blue-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Início Obra</span></div>
             <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-rose-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Fim Obra</span></div>
             <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-emerald-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Pagamentos</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-purple-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Compliance</span></div>
             <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-orange-600 rounded-full"></div><span className="text-[8px] font-black uppercase text-slate-600">Dia 28 (Alertas)</span></div>
         </div>
       </div>
@@ -356,6 +417,7 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
                 <option value={ProjectStatus.IN_PROGRESS}>Em Andamento</option>
                 <option value={ProjectStatus.COMPLETED}>Concluída</option>
                 <option value={ProjectStatus.DELAYED}>Atrasada</option>
+                <option value={ProjectStatus.WAITING_DOCUMENT}>Aguardando Documento</option>
              </select>
           </div>
       </div>
@@ -365,9 +427,10 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
            {filteredProjects.map(project => (
              <div 
                 key={project.id} 
-                className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 hover:shadow-2xl hover:border-slate-800 transition-all group flex flex-col justify-between min-h-[300px] relative"
+                onClick={() => onSelectProject(project.id)}
+                className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 hover:shadow-2xl hover:border-slate-800 transition-all cursor-pointer group flex flex-col justify-between min-h-[300px]"
              >
-                <div onClick={() => onSelectProject(project.id)} className="cursor-pointer">
+                <div>
                   <div className="flex justify-between items-start mb-6">
                     <div className="p-4 bg-slate-900 text-white rounded-2xl group-hover:bg-amber-500 transition-colors">
                       <HardHat size={28} />
@@ -402,34 +465,16 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Término Previsto</span>
                        <span className="text-[10px] font-black text-slate-900 uppercase">{new Date(project.endDate).toLocaleDateString('pt-PT')}</span>
                     </div>
-                    <div className="flex gap-2">
-                        {isAdmin && (
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); setProjectToDelete(project.id); }} 
-                                className="w-8 h-8 rounded-full bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-600 hover:text-white transition-all border border-red-100"
-                                title="Excluir Obra"
-                            >
-                                <Trash2 size={14} />
-                            </button>
-                        )}
-                        <button onClick={() => onSelectProject(project.id)} className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 group-hover:bg-slate-900 group-hover:text-white transition-all border border-slate-100">
-                           <ArrowRight size={16} />
-                        </button>
+                    <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 group-hover:bg-slate-900 group-hover:text-white transition-all border border-slate-100">
+                       <ArrowRight size={16} />
                     </div>
                   </div>
                 </div>
              </div>
            ))}
-           {filteredProjects.length === 0 && (
-             <div className="col-span-full py-24 text-center border-2 border-dashed border-slate-200 rounded-[3rem] bg-slate-50">
-                <HardHat size={48} className="mx-auto text-slate-400 mb-4 opacity-30" />
-                <p className="text-slate-600 font-black uppercase tracking-widest italic leading-relaxed">Nenhuma obra encontrada para<br/>os critérios selecionados.</p>
-             </div>
-           )}
         </div>
       ) : renderCalendar()}
 
-      {/* MODAL DE CADASTRO MELHORADO */}
       {isFormOpen && isAdmin && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-300 animate-scale-in flex flex-col max-h-[95vh]">
@@ -438,13 +483,11 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
                 <h3 className="font-black text-2xl flex items-center gap-4 uppercase tracking-tighter">
                     <HardHat size={32} className="text-amber-500" /> Cadastrar Nova Obra
                 </h3>
-                <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.3em] mt-1">Configuração de Especificações Técnicas e Orçamentais</p>
               </div>
               <button onClick={() => setIsFormOpen(false)} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-all"><X size={28} /></button>
             </div>
             
             <form onSubmit={handleSubmit} className="p-10 space-y-10 overflow-y-auto custom-scrollbar flex-1">
-              {/* SEÇÃO 1: IDENTIFICAÇÃO */}
               <div className="space-y-6">
                 <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.3em] border-l-4 border-amber-500 pl-3 flex items-center gap-2">
                     <Layers size={14}/> Identificação Primária
@@ -470,144 +513,100 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
                     </div>
                     <div>
                         <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Área Estimada (m²)</label>
-                        <div className="relative">
-                            <Maximize2 className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input type="number" name="areaM2" value={formData.areaM2} onChange={handleInputChange} className="w-full pl-14 pr-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none focus:border-slate-900" placeholder="0" />
-                        </div>
+                        <input type="number" name="areaM2" value={formData.areaM2} onChange={handleInputChange} className="w-full px-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none focus:border-slate-900" placeholder="0" />
                     </div>
                 </div>
               </div>
 
-              {/* SEÇÃO 2: LOCALIZAÇÃO E GESTÃO */}
-              <div className="space-y-6">
-                <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.3em] border-l-4 border-blue-500 pl-3 flex items-center gap-2">
-                    <MapPin size={14}/> Localização & Gestão
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Endereço Completo</label>
-                        <div className="relative">
-                            <MapPin className="absolute left-6 top-1/2 -translate-y-1/2 text-blue-500" size={20} />
-                            <input type="text" name="address" required value={formData.address} onChange={handleInputChange} className="w-full pl-16 pr-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none focus:border-blue-500 transition-all" placeholder="Rua, Número, Cidade..." />
-                        </div>
+              {/* SEÇÃO: PLANILHA ORÇAMENTÁRIA (SELEÇÃO DE TAREFAS) */}
+              <div className="space-y-8">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.3em] border-l-4 border-indigo-500 pl-3 flex items-center gap-2">
+                      <ListChecks size={14}/> Composição da Planilha Orçamentária
+                  </h4>
+                  <div className="flex gap-2">
+                    <button 
+                      type="button" 
+                      onClick={() => setSelectedTasks(ALL_DEFAULT_TASKS)}
+                      className="text-[9px] font-black text-indigo-600 uppercase tracking-widest hover:underline"
+                    >
+                      Selecionar Todas
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setSelectedTasks([])}
+                      className="text-[9px] font-black text-slate-400 uppercase tracking-widest hover:underline"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 font-bold uppercase mb-4">Selecione as etapas que compõem esta obra. O peso de 100% será distribuído proporcionalmente entre as selecionadas.</p>
+                
+                <div className="space-y-10">
+                  {CONSTRUCTION_STAGES.map(stage => (
+                    <div key={stage.category} className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-px flex-1 bg-slate-100"></div>
+                        <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{stage.category}</h5>
+                        <div className="h-px flex-1 bg-slate-100"></div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {stage.tasks.map(task => (
+                          <button
+                            key={task}
+                            type="button"
+                            onClick={() => toggleTaskSelection(task)}
+                            className={`p-4 rounded-2xl border-2 text-[10px] font-black uppercase tracking-tight text-left transition-all flex items-center justify-between gap-3 ${
+                              selectedTasks.includes(task) 
+                                ? 'bg-indigo-50 border-indigo-600 text-indigo-900 shadow-sm' 
+                                : 'bg-white border-slate-100 text-slate-400 grayscale opacity-60 hover:opacity-100 hover:grayscale-0'
+                            }`}
+                          >
+                            <span className="flex-1">{task}</span>
+                            {selectedTasks.includes(task) && <CheckCircle2 size={14} className="shrink-0" />}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div>
-                        <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Responsável Técnico (RT)</label>
-                        <div className="relative">
-                            <Briefcase className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                            <input type="text" name="responsible" required value={formData.responsible} onChange={handleInputChange} className="w-full pl-16 pr-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none focus:border-slate-900 transition-all" placeholder="Engenheiro ou Encarregado" />
-                        </div>
-                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-slate-900 p-6 rounded-3xl text-center sticky bottom-4 shadow-2xl border border-white/10 z-10">
+                   <p className="text-white text-[11px] font-black uppercase tracking-widest">
+                     Distribuição Automática: {selectedTasks.length > 0 ? (100 / selectedTasks.length).toFixed(2) : 0}% por cada uma das {selectedTasks.length} tarefas selecionadas.
+                   </p>
                 </div>
               </div>
 
-              {/* SEÇÃO 3: CRONOGRAMA & PRIORIDADE */}
               <div className="space-y-6">
                 <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.3em] border-l-4 border-emerald-500 pl-3 flex items-center gap-2">
-                    <CalendarIcon size={14}/> Cronograma & Prioridade
+                    <CalendarIcon size={14}/> Cronograma & Financeiro
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                         <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Data Início</label>
-                        <div className="relative group">
-                            <div className="absolute left-6 top-1/2 -translate-y-1/2 text-emerald-600 z-10 pointer-events-none group-focus-within:scale-110 transition-transform">
-                                <CalendarIcon size={20} strokeWidth={3} />
-                            </div>
-                            <input 
-                                type="date" 
-                                name="startDate" 
-                                required 
-                                value={formData.startDate} 
-                                onChange={handleInputChange} 
-                                className="w-full pl-16 pr-6 py-5 bg-white border-2 border-slate-300 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 shadow-sm appearance-none cursor-pointer" 
-                            />
-                        </div>
+                        <input type="date" name="startDate" required value={formData.startDate} onChange={handleInputChange} className="w-full px-6 py-5 bg-white border-2 border-slate-300 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none" />
                     </div>
                     <div>
                         <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Previsão Término</label>
-                        <div className="relative group">
-                            <div className="absolute left-6 top-1/2 -translate-y-1/2 text-red-500 z-10 pointer-events-none group-focus-within:scale-110 transition-transform">
-                                <CalendarIcon size={20} strokeWidth={3} />
-                            </div>
-                            <input 
-                                type="date" 
-                                name="endDate" 
-                                required 
-                                value={formData.endDate} 
-                                onChange={handleInputChange} 
-                                className="w-full pl-16 pr-6 py-5 bg-white border-2 border-slate-300 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 shadow-sm appearance-none cursor-pointer" 
-                            />
-                        </div>
+                        <input type="date" name="endDate" required value={formData.endDate} onChange={handleInputChange} className="w-full px-6 py-5 bg-white border-2 border-slate-300 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none" />
                     </div>
                     <div>
-                        <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Nível de Prioridade</label>
-                        <div className="relative">
-                            <Tag className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <select name="priority" required value={formData.priority} onChange={handleInputChange} className="w-full pl-14 pr-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none focus:border-slate-900 transition-all appearance-none cursor-pointer">
-                                <option value="Normal">Prioridade Normal</option>
-                                <option value="Baixa">Prioridade Baixa</option>
-                                <option value="Urgente">Urgente / Crítica</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-              </div>
-
-              {/* SEÇÃO 4: FINANCEIRO & DETALHES */}
-              <div className="space-y-6">
-                <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.3em] border-l-4 border-indigo-500 pl-3 flex items-center gap-2">
-                    <DollarSign size={14}/> Financeiro & Escopo
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-1">
                         <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Orçamento Previsto (€)</label>
-                        <div className="relative">
-                            <div className="absolute left-6 top-1/2 -translate-y-1/2 text-emerald-600 font-black text-lg">€</div>
-                            <input type="number" name="budget" required value={formData.budget} onChange={handleInputChange} className="w-full pl-12 pr-6 py-6 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-2xl font-black text-emerald-800 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20" placeholder="0.00" />
-                        </div>
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Descrição do Escopo / Notas</label>
-                        <div className="relative">
-                            <FileEdit className="absolute left-6 top-6 text-slate-300" size={20} />
-                            <textarea name="description" rows={3} value={formData.description} onChange={handleInputChange} className="w-full pl-16 pr-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-900 outline-none focus:border-slate-900 resize-none placeholder:text-slate-400" placeholder="Especifique os principais serviços a serem executados nesta obra..." />
-                        </div>
+                        <input type="number" name="budget" required value={formData.budget} onChange={handleInputChange} className="w-full px-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-emerald-800" placeholder="0.00" />
                     </div>
                 </div>
               </div>
               
-              <div className="pt-10 flex flex-col md:flex-row justify-end gap-4 border-t border-slate-100 shrink-0">
-                <button 
-                  type="button" 
-                  onClick={() => setIsFormOpen(false)} 
-                  className="px-10 py-5 text-slate-500 font-black uppercase text-[11px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  className="bg-slate-900 text-white px-14 py-5 rounded-[1.5rem] font-black shadow-2xl hover:bg-black active:scale-95 transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-sm border-2 border-emerald-500/30"
-                >
+              <div className="pt-10 flex flex-col md:flex-row justify-end gap-4 border-t border-slate-100">
+                <button type="button" onClick={() => setIsFormOpen(false)} className="px-10 py-5 text-slate-500 font-black uppercase text-[11px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                <button type="submit" disabled={selectedTasks.length === 0} className="bg-slate-900 text-white px-14 py-5 rounded-[1.5rem] font-black shadow-2xl hover:bg-black active:scale-95 transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-sm border-2 border-emerald-500/30 disabled:opacity-50">
                   <Save size={22} className="text-amber-500"/> Finalizar Cadastro de Obra
                 </button>
               </div>
             </form>
           </div>
-        </div>
-      )}
-
-      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE OBRA */}
-      {projectToDelete && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-           <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in border border-red-200">
-              <div className="w-16 h-16 bg-red-100 text-red-700 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={32}/></div>
-              <h3 className="text-xl font-black text-slate-950 uppercase mb-2">Remover Obra?</h3>
-              <p className="text-slate-700 text-sm mb-8 leading-relaxed italic font-medium">Deseja excluir este projeto permanentemente? Todos os registros vinculados podem ser afetados.</p>
-              <div className="grid grid-cols-2 gap-4">
-                 <button onClick={() => setProjectToDelete(null)} className="py-4 text-slate-700 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 rounded-xl transition-all">Manter</button>
-                 <button onClick={handleDeleteConfirm} className="py-4 bg-red-700 text-white font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-red-800 shadow-xl shadow-red-600/20 transition-all">Excluir</button>
-              </div>
-           </div>
         </div>
       )}
     </div>

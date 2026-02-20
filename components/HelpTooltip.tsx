@@ -20,15 +20,27 @@ const HelpTooltip: React.FC<HelpTooltipProps> = ({ title, description, position 
 
   return (
     <div className="relative inline-block ml-1">
-      <button
+      <div
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
-        onClick={() => setIsVisible(!isVisible)}
-        className="text-slate-400 hover:text-amber-500 transition-colors p-0.5"
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsVisible(!isVisible);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsVisible(!isVisible);
+          }
+        }}
+        tabIndex={0}
+        role="button"
+        className="text-slate-400 hover:text-amber-500 transition-colors p-0.5 cursor-pointer inline-flex"
         aria-label="Ajuda"
       >
         <HelpCircle size={14} />
-      </button>
+      </div>
 
       {isVisible && (
         <div className={`absolute z-[100] w-64 p-3 bg-slate-900 text-white rounded-xl shadow-2xl border border-white/10 animate-fade-in ${positionClasses[position]}`}>

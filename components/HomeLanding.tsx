@@ -19,7 +19,8 @@ import {
   ShieldCheck,
   Bell,
   CheckCircle2,
-  X
+  X,
+  StickyNote
 } from 'lucide-react';
 
 interface HomeLandingProps {
@@ -75,6 +76,14 @@ const HomeLanding: React.FC<HomeLandingProps> = ({ onNavigate, userRole, project
       help: 'Cadastre seus funcionários aqui antes de lançar o ponto.'
     },
     {
+      id: 'notes' as ViewState,
+      title: 'Anotações Diárias',
+      description: 'Registro rápido de tarefas, lembretes e observações críticas de campo.',
+      icon: <StickyNote size={28} />,
+      gradient: 'from-amber-400 to-orange-500',
+      help: 'Mantenha um diário de bordo com prioridades.'
+    },
+    {
       id: 'finance' as ViewState,
       title: 'Gestão Financeira',
       description: 'Fluxo de caixa, extratos detalhados e controle de custos diretos e indiretos.',
@@ -107,14 +116,6 @@ const HomeLanding: React.FC<HomeLandingProps> = ({ onNavigate, userRole, project
       help: 'Controle de gastos com combustível e datas de revisão.'
     },
     {
-      id: 'compliance' as ViewState,
-      title: 'Compliance & Docs',
-      description: 'Certificações, alvarás e auditorias de qualidade exigidas pela marca.',
-      icon: <FileCheck size={28} />,
-      gradient: 'from-purple-600 to-indigo-800',
-      help: 'Documentos legais e checklists de auditoria da franquia.'
-    },
-    {
       id: 'ai-analysis' as ViewState,
       title: 'Consultor AI',
       description: 'Análise preditiva e insights estratégicos gerados por inteligência artificial.',
@@ -124,7 +125,7 @@ const HomeLanding: React.FC<HomeLandingProps> = ({ onNavigate, userRole, project
     }
   ];
 
-  const allowedGuestModules = ['dashboard', 'projects', 'team'];
+  const allowedGuestModules = ['dashboard', 'projects', 'team', 'notes'];
 
   return (
     <div className="min-h-screen bg-[#060a14] flex flex-col items-center p-6 md:p-12 animate-fade-in relative overflow-x-hidden">
@@ -163,9 +164,18 @@ const HomeLanding: React.FC<HomeLandingProps> = ({ onNavigate, userRole, project
             const isAllowed = isAdmin || allowedGuestModules.includes(module.id);
             
             return (
-              <button
+              <div
                 key={module.id}
                 onClick={() => isAllowed ? onNavigate(module.id) : null}
+                onKeyDown={(e) => {
+                  if (isAllowed && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    onNavigate(module.id);
+                  }
+                }}
+                tabIndex={isAllowed ? 0 : -1}
+                role="button"
+                aria-disabled={!isAllowed}
                 className={`group relative text-left transition-all duration-300 ${isAllowed ? 'hover:-translate-y-2 cursor-pointer' : 'opacity-40 cursor-not-allowed'}`}
               >
                 <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-white/0 rounded-[2rem] border border-white/10 group-hover:border-white/20 transition-all duration-500"></div>
@@ -192,7 +202,7 @@ const HomeLanding: React.FC<HomeLandingProps> = ({ onNavigate, userRole, project
                     </p>
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
