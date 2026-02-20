@@ -174,7 +174,7 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
                <tbody className="divide-y divide-slate-100">
                   {filteredRecords.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50 transition-all group">
-                       <td className="py-5 px-8 text-xs font-black text-slate-900">{new Date(r.date).toLocaleDateString('pt-PT')}</td>
+                       <td className="py-5 px-8 text-xs font-black text-slate-900">{r.date ? new Date(r.date).toLocaleDateString('pt-PT') : 'N/A'}</td>
                        <td className="py-5 px-8">
                           <div className="flex items-center gap-3">
                              <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center font-black text-[10px] text-slate-900 border border-slate-200">{r.employeeName.substring(0, 2).toUpperCase()}</div>

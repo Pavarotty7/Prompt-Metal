@@ -282,7 +282,7 @@ const FinanceView: React.FC<FinanceViewProps> = ({
                 <tbody className="divide-y divide-slate-200">
                   {filteredTransactions.map((t) => (
                     <tr key={t.id} className="hover:bg-slate-50 transition-colors group">
-                      <td className="py-5 px-6"><p className="text-xs font-black text-slate-900">{new Date(t.date).toLocaleDateString('pt-PT')}</p></td>
+                      <td className="py-5 px-6"><p className="text-xs font-black text-slate-900">{t.date ? new Date(t.date).toLocaleDateString('pt-PT') : 'N/A'}</p></td>
                       <td className="py-5 px-6">
                           <div className="flex items-center gap-2"><p className="text-sm font-black text-slate-950 uppercase tracking-tight leading-none mb-1">{t.description}</p>{t.notes && (<div className="group relative inline-block"><MessageSquare size={14} className="text-indigo-700 cursor-help" /><div className="absolute bottom-full left-0 mb-3 w-56 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all z-50 shadow-2xl border border-white/10"><p className="font-black text-indigo-400 uppercase mb-1">Notas:</p>{t.notes}</div></div>)}</div>
                           <div className="flex items-center gap-2"><span className="text-[9px] font-black text-slate-900 bg-slate-200 px-1.5 py-0.5 rounded uppercase border border-slate-300">{t.category}</span><span className="text-[9px] text-slate-800 font-bold uppercase truncate max-w-[150px]">{projects.find(p=>p.id === t.projectId)?.name || 'Geral'}</span></div>

@@ -164,18 +164,18 @@ export interface Vehicle {
 export interface Employee {
   id: string;
   name: string;
-  nif?: string; 
-  role: string; 
+  nif?: string;
+  role: string;
   type: 'CLT' | 'PJ' | 'Terceiro';
-  category: 'Administrative' | 'Operational'; 
+  category: 'Administrative' | 'Operational';
   allocationId: string;
   allocationType: 'project' | 'department';
-  baseRate?: number; 
+  baseRate?: number;
   hasCorporateCard?: boolean;
   cardLimit?: number;
   cardLast4?: string;
-  cardExpiry?: string; 
-  cardImage?: string; 
+  cardExpiry?: string;
+  cardImage?: string;
 }
 
 export interface TimesheetRecord {
@@ -184,14 +184,14 @@ export interface TimesheetRecord {
   date: string;
   projectId: string;
   status: 'Presente' | 'Falta' | 'Folga' | 'Escritório';
-  standardHours: number; 
-  dailyRate: number; 
-  hourlyRate: number; 
+  standardHours: number;
+  dailyRate: number;
+  hourlyRate: number;
   overtimeHours: number;
-  advanceDeduction: number; 
+  advanceDeduction: number;
   notes?: string;
-  totalPay: number; 
-  attachment?: string; 
+  totalPay: number;
+  attachment?: string;
 }
 
 export interface DailyNote {
@@ -200,6 +200,14 @@ export interface DailyNote {
   content: string;
   priority: 'Baixa' | 'Média' | 'Alta' | 'Crítica';
   completed: boolean;
+}
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  checked: boolean;
+  critical: boolean;
+  deadline: string;
 }
 
 export type ViewState = 'home' | 'dashboard' | 'projects' | 'schedule' | 'finance' | 'fleet' | 'ai-analysis' | 'team' | 'project-detail' | 'timesheet' | 'corporate-cards' | 'notes';

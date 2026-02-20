@@ -72,6 +72,7 @@ const CorporateCardView: React.FC<CorporateCardViewProps> = ({ employees, onUpda
   const formatCardExpiry = (dateStr?: string) => {
     if (!dateStr) return '00/00';
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '00/00';
     return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getFullYear()).slice(2)}`;
   };
 
@@ -329,7 +330,7 @@ const CorporateCardView: React.FC<CorporateCardViewProps> = ({ employees, onUpda
                        {employeeTransactions.length > 0 ? employeeTransactions.map(tx => (
                          <tr key={tx.id} className="hover:bg-slate-50 transition-all group">
                             <td className="py-4 px-6 text-xs text-black font-black uppercase">
-                                {new Date(tx.date).toLocaleDateString('pt-PT')}
+                                {tx.date ? new Date(tx.date).toLocaleDateString('pt-PT') : 'N/A'}
                             </td>
                             <td className="py-4 px-6 text-sm font-black text-black uppercase tracking-tight">
                                 {tx.description}

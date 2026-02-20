@@ -64,7 +64,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const alerts = useMemo(() => {
     const finance = transactions.filter(t => {
-      if (t.type !== 'expense' || t.status !== 'Pendente') return false;
+      if (t.type !== 'expense' || t.status !== 'Pendente' || !t.date) return false;
       const dueDate = new Date(t.date);
       const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       return diffDays >= 0 && diffDays <= 7;
@@ -89,7 +89,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         .filter(doc => doc.type === 'Seguro' && doc.expiryDate)
         .map(doc => ({ ...doc, vehicleModel: v.model, vehiclePlate: v.plate }))
     ).filter(doc => {
-        const expiry = new Date(doc.expiryDate!);
+        if (!doc.expiryDate) return false;
+        const expiry = new Date(doc.expiryDate);
         const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         return diffDays >= 0 && diffDays <= 30;
     });
