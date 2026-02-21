@@ -1,13 +1,13 @@
 
 import React, { useState, useMemo } from 'react';
 import { DailyNote, UserRole } from '../types';
-import {
-  StickyNote,
-  Plus,
-  Trash2,
-  Calendar,
-  AlertCircle,
-  CheckCircle2,
+import { 
+  StickyNote, 
+  Plus, 
+  Trash2, 
+  Calendar, 
+  AlertCircle, 
+  CheckCircle2, 
   Circle,
   Search,
   Filter,
@@ -28,7 +28,7 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
-
+  
   const [formData, setFormData] = useState({
     content: '',
     priority: 'Média' as DailyNote['priority'],
@@ -37,8 +37,7 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
 
   const filteredNotes = useMemo(() => {
     return notes.filter(note => {
-      const safeContent = String(note?.content || '');
-      const matchesSearch = safeContent.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = note.content.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesPriority = priorityFilter === 'all' || note.priority === priorityFilter;
       return matchesSearch && matchesPriority;
     }).sort((a, b) => {
@@ -80,12 +79,24 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
     }
   };
 
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editedContent, setEditedContent] = useState('');
+
+  const handleEdit = (note: DailyNote) => {
+    setEditingNoteId(note.id);
+    setEditedContent(note.content);
+  };
+
+  const handleSave = (note: DailyNote) => {
+    onUpdateNote({ ...note, content: editedContent });
+    setEditingNoteId(null);
+  };
+
   const groupedNotes = useMemo(() => {
     const groups: { [key: string]: DailyNote[] } = {};
     filteredNotes.forEach(note => {
-      const safeDate = note?.date || new Date().toISOString().split('T')[0];
-      if (!groups[safeDate]) groups[safeDate] = [];
-      groups[safeDate].push({ ...note, date: safeDate, content: String(note?.content || '') });
+      if (!groups[note.date]) groups[note.date] = [];
+      groups[note.date].push(note);
     });
     return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
   }, [filteredNotes]);
@@ -97,7 +108,7 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
           <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Anotações Diárias</h2>
           <p className="text-slate-500 font-medium italic">Registro de tarefas, lembretes e observações de campo</p>
         </div>
-        <button
+        <button 
           onClick={() => setIsModalOpen(true)}
           className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black shadow-xl active:scale-95 transition-all flex items-center gap-2"
         >
@@ -108,9 +119,9 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
       <div className="flex flex-col md:flex-row gap-4 items-center bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-4 top-3 text-slate-400" size={18} />
-          <input
-            type="text"
-            placeholder="Buscar nas anotações..."
+          <input 
+            type="text" 
+            placeholder="Buscar nas anotações..." 
             className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900 placeholder:text-slate-400"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -118,7 +129,7 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <Filter size={18} className="text-slate-400" />
-          <select
+          <select 
             className="flex-1 md:flex-none px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-[10px] font-black uppercase outline-none text-slate-800"
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value)}
@@ -138,7 +149,7 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
             <div className="absolute left-0 top-0 w-9 h-9 bg-slate-900 rounded-full border-4 border-slate-50 flex items-center justify-center z-10 shadow-md">
               <Calendar size={14} className="text-amber-500" />
             </div>
-
+            
             <div className="mb-6">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest bg-white inline-block px-4 py-1.5 rounded-full border border-slate-200 shadow-sm">
                 {new Date(date).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
@@ -147,10 +158,11 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {dateNotes.map(note => (
-                <div
-                  key={note.id}
-                  className={`bg-white rounded-[2rem] border transition-all p-6 flex flex-col justify-between min-h-[180px] group relative ${note.completed ? 'opacity-60 border-slate-100' : 'border-slate-200 shadow-sm hover:shadow-xl hover:border-slate-400'
-                    }`}
+                <div 
+                  key={note.id} 
+                  className={`bg-white rounded-[2rem] border transition-all p-6 flex flex-col justify-between min-h-[180px] group relative ${
+                    note.completed ? 'opacity-60 border-slate-100' : 'border-slate-200 shadow-sm hover:shadow-xl hover:border-slate-400'
+                  }`}
                 >
                   <div>
                     <div className="flex justify-between items-start mb-4">
@@ -158,13 +170,19 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
                         {note.priority}
                       </span>
                       <div className="flex items-center gap-2">
-                        <button
+                        <button 
                           onClick={() => toggleComplete(note)}
                           className={`p-1.5 rounded-full transition-all ${note.completed ? 'text-emerald-600 bg-emerald-50' : 'text-slate-300 hover:text-slate-600'}`}
                         >
                           {note.completed ? <CheckCircle2 size={20} /> : <Circle size={20} />}
                         </button>
-                        <button
+                        <button 
+                          onClick={() => handleEdit(note)}
+                          className="p-1.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-all"
+                        >
+                          <Save size={18} />
+                        </button>
+                        <button 
                           onClick={() => onDeleteNote(note.id)}
                           className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
                         >
@@ -212,22 +230,22 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
               <div>
                 <label className="block text-[10px] font-black text-black uppercase mb-2 tracking-widest">Conteúdo da Anotação</label>
-                <textarea
-                  required
+                <textarea 
+                  required 
                   rows={4}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-black outline-none focus:ring-2 focus:ring-slate-800 placeholder:text-slate-400"
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-black outline-none focus:ring-2 focus:ring-slate-800 placeholder:text-slate-400" 
                   placeholder="Descreva o lembrete ou observação..."
                   value={formData.content}
-                  onChange={e => setFormData({ ...formData, content: e.target.value })}
+                  onChange={e => setFormData({...formData, content: e.target.value})}
                 />
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-[10px] font-black text-black uppercase mb-2 tracking-widest">Prioridade</label>
-                  <select
+                  <select 
                     className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-black outline-none"
                     value={formData.priority}
-                    onChange={e => setFormData({ ...formData, priority: e.target.value as any })}
+                    onChange={e => setFormData({...formData, priority: e.target.value as any})}
                   >
                     <option value="Baixa">Baixa</option>
                     <option value="Média">Média</option>
@@ -237,12 +255,12 @@ const NotesView: React.FC<NotesViewProps> = ({ notes, onAddNote, onUpdateNote, o
                 </div>
                 <div>
                   <label className="block text-[10px] font-black text-black uppercase mb-2 tracking-widest">Data</label>
-                  <input
-                    type="date"
-                    required
+                  <input 
+                    type="date" 
+                    required 
                     className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-black outline-none"
                     value={formData.date}
-                    onChange={e => setFormData({ ...formData, date: e.target.value })}
+                    onChange={e => setFormData({...formData, date: e.target.value})}
                   />
                 </div>
               </div>

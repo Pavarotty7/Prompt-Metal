@@ -199,11 +199,14 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
 
   const handleInvalidateDoc = (id: string) => {
     if (!isAdmin || !onUpdateProject) return;
-    if (!confirm("Confirmar invalidação? Este documento será marcado como obsoleto.")) return;
     
+    const updatedDocs = (project.documents || []).map(doc => 
+      doc.id === id ? { ...doc, status: 'Inválido' as const } : doc
+    );
+
     onUpdateProject({
       ...project,
-      documents: (project.documents || []).map(d => d.id === id ? { ...d, status: 'Inválido' } : d)
+      documents: updatedDocs
     });
   };
 
