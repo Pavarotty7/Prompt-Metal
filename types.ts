@@ -202,4 +202,4 @@ export interface DailyNote {
   completed: boolean;
 }
 
-export type ViewState = 'home' | 'dashboard' | 'projects' | 'schedule' | 'finance' | 'fleet' | 'ai-analysis' | 'team' | 'project-detail' | 'timesheet' | 'corporate-cards' | 'notes';
+export type ViewState = 'home' | 'dashboard' | 'projects' | 'schedule' | 'finance' | 'fleet' | 'ai-analysis' | 'team' | 'project-detail' | 'timesheet' | 'corporate-cards' | 'notes' | 'settings';

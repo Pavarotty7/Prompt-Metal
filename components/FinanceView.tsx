@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import { Transaction, Project, UserRole } from '../types';
 import { 
   ArrowUpCircle, 
@@ -66,6 +67,40 @@ const FinanceView: React.FC<FinanceViewProps> = ({
 
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const isAdmin = userRole === 'admin';
+
+  const handleExportExcel = useCallback(() => {
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    
+    // Filter transactions for current month if needed, or just export filtered list
+    // The user asked for "extrato mensal", so let's filter by current month by default
+    const currentMonthTransactions = transactions.filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() + 1 === month && d.getFullYear() === year;
+    });
+
+    const dataToExport = currentMonthTransactions.map(t => ({
+      'Data': t.date ? new Date(t.date).toLocaleDateString('pt-PT') : 'N/A',
+      'Descrição': t.description,
+      'Categoria': t.category,
+      'Obra': projects.find(p => p.id === t.projectId)?.name || 'Geral',
+      'Tipo': t.type === 'income' ? 'Entrada' : 'Saída',
+      'Status': t.status,
+      'Valor (€)': t.amount,
+      'Notas': t.notes || ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Extrato Mensal");
+    
+    // Auto-size columns
+    const max_width = dataToExport.reduce((w, r) => Math.max(w, r.Descrição.length), 10);
+    worksheet["!cols"] = [ { wch: 12 }, { wch: max_width }, { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 30 } ];
+
+    XLSX.writeFile(workbook, `Extrato_Mensal_${month}_${year}.xlsx`);
+  }, [transactions, projects]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -182,6 +217,12 @@ const FinanceView: React.FC<FinanceViewProps> = ({
             <p className="text-slate-600 font-medium italic">Gestão centralizada de fluxo de caixa e comprovantes</p>
           </div>
           <div className="flex gap-2">
+            <button 
+              onClick={handleExportExcel}
+              className="flex items-center gap-2 bg-white text-slate-900 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-50 shadow-sm border border-slate-300 transition-all"
+            >
+              <FileText size={20} className="text-blue-600" /> Exportar Excel
+            </button>
             {isAdmin && (
               <button 
                 onClick={handleOpenNew}

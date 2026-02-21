@@ -12,7 +12,8 @@ import {
   Users,
   ClipboardList,
   CreditCard,
-  StickyNote
+  StickyNote,
+  Settings
 } from 'lucide-react';
 import { ViewState, UserRole } from '../types';
 
@@ -35,13 +36,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
     { id: 'fleet' as ViewState, label: 'Frota & Combustível', icon: <Truck size={20} /> },
     { id: 'team' as ViewState, label: 'Equipe & Organograma', icon: <Users size={20} /> },
     { id: 'notes' as ViewState, label: 'Anotações Diárias', icon: <StickyNote size={20} /> },
+    { id: 'settings' as ViewState, label: 'Configurações', icon: <Settings size={20} /> },
     { id: 'ai-analysis' as ViewState, label: 'Consultor AI', icon: <BrainCircuit size={20} /> },
   ], []);
 
   const visibleMenuItems = React.useMemo(() => 
     userRole === 'admin' 
       ? menuItems 
-      : menuItems.filter(item => GUEST_ALLOWED_VIEWS.includes(item.id)),
+      : menuItems.filter(item => [...GUEST_ALLOWED_VIEWS, 'settings'].includes(item.id)),
   [userRole, menuItems]);
 
   return (

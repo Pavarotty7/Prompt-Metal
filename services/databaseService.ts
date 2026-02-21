@@ -82,5 +82,25 @@ export const databaseService = {
   deleteNote: (id: string) => {
     const items = getLocal<DailyNote>(STORAGE_KEYS.NOTES).filter(i => i.id !== id);
     setLocal(STORAGE_KEYS.NOTES, items);
+  },
+
+  // Backup & Import
+  getAllData: () => {
+    return {
+      projects: getLocal<Project>(STORAGE_KEYS.PROJECTS),
+      transactions: getLocal<Transaction>(STORAGE_KEYS.TRANSACTIONS),
+      employees: getLocal<Employee>(STORAGE_KEYS.EMPLOYEES),
+      vehicles: getLocal<Vehicle>(STORAGE_KEYS.VEHICLES),
+      timesheets: getLocal<TimesheetRecord>(STORAGE_KEYS.TIMESHEETS),
+      notes: getLocal<DailyNote>(STORAGE_KEYS.NOTES)
+    };
+  },
+  importAllData: (data: any) => {
+    if (data.projects) setLocal(STORAGE_KEYS.PROJECTS, data.projects);
+    if (data.transactions) setLocal(STORAGE_KEYS.TRANSACTIONS, data.transactions);
+    if (data.employees) setLocal(STORAGE_KEYS.EMPLOYEES, data.employees);
+    if (data.vehicles) setLocal(STORAGE_KEYS.VEHICLES, data.vehicles);
+    if (data.timesheets) setLocal(STORAGE_KEYS.TIMESHEETS, data.timesheets);
+    if (data.notes) setLocal(STORAGE_KEYS.NOTES, data.notes);
   }
 };

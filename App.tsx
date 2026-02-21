@@ -14,6 +14,7 @@ import HomeLanding from './components/HomeLanding';
 import RoleSelection from './components/RoleSelection';
 import ScheduleView from './components/ScheduleView';
 import NotesView from './components/NotesView';
+import SettingsView from './components/SettingsView';
 import { ViewState, Transaction, Project, Employee, UserRole, Vehicle, TimesheetRecord, ScheduleTask, DailyNote } from './types';
 import { databaseService } from './services/databaseService';
 
@@ -138,6 +139,15 @@ const App: React.FC = () => {
     setCurrentView(view);
   }, []);
 
+  const handleRefreshData = useCallback(() => {
+    setProjects(databaseService.getProjects());
+    setTransactions(databaseService.getTransactions());
+    setEmployees(databaseService.getEmployees());
+    setVehicles(databaseService.getVehicles());
+    setTimesheetRecords(databaseService.getTimesheets());
+    setNotes(databaseService.getNotes());
+  }, []);
+
   const activeProject = useMemo(() => 
     projects.find(p => p.id === selectedProjectId), 
   [projects, selectedProjectId]);
@@ -181,15 +191,16 @@ const App: React.FC = () => {
       case 'timesheet': return <TimesheetView employees={employees} projects={projects} records={timesheetRecords} onAddBatch={handleAddTimesheetBatch} onDeleteRecord={handleDeleteTimesheet} userRole={userRole} />;
       case 'corporate-cards': return <CorporateCardView employees={employees} onUpdateEmployee={handleUpdateEmployee} userRole={userRole} />;
       case 'notes': return <NotesView notes={notes} onAddNote={handleAddNote} onUpdateNote={handleUpdateNote} onDeleteNote={handleDeleteNote} userRole={userRole} />;
+      case 'settings': return <SettingsView onImportSuccess={handleRefreshData} />;
       case 'ai-analysis': return <AIAdvisor projects={projects} transactions={transactions} fleet={vehicles} />;
       default: return <Dashboard projects={projects} transactions={transactions} userRole={userRole} onNavigate={handleViewChange} />;
     }
   };
 
   return (
-    <div className="grid grid-cols-[256px_1fr] min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50">
       <Sidebar currentView={currentView} onChangeView={handleViewChange} userRole={userRole} onLogout={handleLogout} />
-      <main className="p-8 overflow-y-auto">
+      <main className="flex-1 ml-64 p-8 overflow-y-auto">
         <div className="max-w-7xl mx-auto">{renderContent()}</div>
       </main>
     </div>
