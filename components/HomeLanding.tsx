@@ -149,9 +149,9 @@ const HomeLanding: React.FC<HomeLandingProps> = ({ onNavigate, userRole, project
             <div className="flex gap-1 overflow-x-auto max-w-full">
               {kpis.map((kpi, idx) => (
                 <div key={idx} className="px-4 py-2 border-r border-white/5 last:border-0 flex flex-col whitespace-nowrap min-w-[120px]">
-                  <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest mb-1 flex items-center gap-1">
+                  <div className="text-[8px] font-black text-slate-300 uppercase tracking-widest mb-1 flex items-center gap-1">
                     {kpi.icon} {kpi.label} <HelpTooltip title={kpi.label} description={kpi.help} />
-                  </span>
+                  </div>
                   <span className={`text-sm font-black ${kpi.color}`}>{kpi.value}</span>
                 </div>
               ))}

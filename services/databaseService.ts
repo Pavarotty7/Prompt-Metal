@@ -29,6 +29,10 @@ export const databaseService = {
     else projects.unshift(project);
     setLocal(STORAGE_KEYS.PROJECTS, projects);
   },
+  deleteProject: (id: string) => {
+    const projects = getLocal<Project>(STORAGE_KEYS.PROJECTS).filter(p => p.id !== id);
+    setLocal(STORAGE_KEYS.PROJECTS, projects);
+  },
 
   // Transações
   getTransactions: () => getLocal<Transaction>(STORAGE_KEYS.TRANSACTIONS),

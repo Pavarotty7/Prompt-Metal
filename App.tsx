@@ -76,6 +76,15 @@ const App: React.FC = () => {
     setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
   }, []);
 
+  const handleDeleteProject = useCallback((id: string) => {
+    databaseService.deleteProject(id);
+    setProjects(prev => prev.filter(p => p.id !== id));
+    if (selectedProjectId === id) {
+      setSelectedProjectId(null);
+      setCurrentView('projects');
+    }
+  }, [selectedProjectId]);
+
   const handleAddEmployee = useCallback((newEmployee: Employee) => {
     databaseService.saveEmployee(newEmployee);
     setEmployees(prev => [...prev, newEmployee]);
@@ -174,6 +183,8 @@ const App: React.FC = () => {
           transactions={transactions}
           employees={employees}
           onAddProject={handleAddProject} 
+          onUpdateProject={handleUpdateProject}
+          onDeleteProject={handleDeleteProject}
           onSelectProject={handleSelectProject} 
           userRole={userRole} 
         />

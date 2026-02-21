@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Project, BudgetTask, TaskStatus } from '../types';
 import { calculateTotalProgress } from '../services/budgetService';
+import { CONSTRUCTION_STAGES } from '../constants';
 import { 
   CheckCircle2, 
   Clock, 
@@ -14,7 +15,8 @@ import {
   Pencil,
   Trash2,
   X,
-  Save
+  Save,
+  Search
 } from 'lucide-react';
 
 interface BudgetProgressManagerProps {
@@ -26,8 +28,22 @@ interface BudgetProgressManagerProps {
 const BudgetProgressManager: React.FC<BudgetProgressManagerProps> = ({ project, onUpdateTasks, isAdmin }) => {
   const tasks = project.tarefas || [];
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<BudgetTask | null>(null);
-  const [form, setForm] = useState({ nome: '', percentualTotal: '' });
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const availableTasks = useMemo(() => {
+    const existingTaskNames = new Set(tasks.map(t => t.nome));
+    return CONSTRUCTION_STAGES.flatMap(s => s.tasks.map(task => ({
+      name: task,
+      category: s.category
+    }))).filter(t => !existingTaskNames.has(t.name));
+  }, [tasks]);
+
+  const filteredAvailableTasks = useMemo(() => {
+    return availableTasks.filter(t => 
+      t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.category.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [availableTasks, searchTerm]);
 
   const handleTaskProgressChange = (taskId: string, newValue: number) => {
     if (!isAdmin) return;
@@ -60,51 +76,45 @@ const BudgetProgressManager: React.FC<BudgetProgressManagerProps> = ({ project, 
     onUpdateTasks(updatedTasks, calculateTotalProgress(updatedTasks));
   };
 
-  const handleOpenModal = (task?: BudgetTask) => {
-    if (task) {
-      setEditingTask(task);
-      setForm({ nome: task.nome, percentualTotal: task.percentualTotal.toString() });
-    } else {
-      setEditingTask(null);
-      setForm({ nome: '', percentualTotal: '' });
-    }
-    setIsModalOpen(true);
-  };
-
-  const handleSaveTask = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddTaskFromList = (taskName: string) => {
     if (!isAdmin) return;
 
-    let updatedTasks = [...tasks];
-    const weight = parseFloat(form.percentualTotal) || 0;
+    const newTask: BudgetTask = {
+      id: Math.random().toString(36).substr(2, 9),
+      nome: taskName,
+      percentualTotal: 0, // Will be redistributed
+      percentualConcluido: 0,
+      status: 'Planeamento'
+    };
 
-    if (editingTask) {
-      updatedTasks = updatedTasks.map(t => 
-        t.id === editingTask.id ? { ...t, nome: form.nome, percentualTotal: weight } : t
-      );
-    } else {
-      const newTask: BudgetTask = {
-        id: Math.random().toString(36).substr(2, 9),
-        nome: form.nome,
-        percentualTotal: weight,
-        percentualConcluido: 0,
-        status: 'Planeamento'
-      };
-      updatedTasks.unshift(newTask);
-    }
+    const updatedTasks = [newTask, ...tasks];
+    
+    // Redistribute weights equally
+    const individualWeight = Number((100 / updatedTasks.length).toFixed(2));
+    const redistributedTasks = updatedTasks.map(t => ({ ...t, percentualTotal: individualWeight }));
 
-    const newTotalProgress = calculateTotalProgress(updatedTasks);
-    onUpdateTasks(updatedTasks, newTotalProgress);
+    const newTotalProgress = calculateTotalProgress(redistributedTasks);
+    onUpdateTasks(redistributedTasks, newTotalProgress);
     setIsModalOpen(false);
+    setSearchTerm('');
   };
 
-  const handleDeleteTask = (id: string) => {
+  const handleDeleteTask = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
     if (!isAdmin) return;
     if (!confirm("Confirmar exclusão desta etapa?")) return;
 
-    const updatedTasks = tasks.filter(t => t.id !== id);
-    const newTotalProgress = calculateTotalProgress(updatedTasks);
-    onUpdateTasks(updatedTasks, newTotalProgress);
+    const remainingTasks = tasks.filter(t => t.id !== id);
+    
+    // Redistribute weights equally
+    let redistributedTasks = remainingTasks;
+    if (remainingTasks.length > 0) {
+      const individualWeight = Number((100 / remainingTasks.length).toFixed(2));
+      redistributedTasks = remainingTasks.map(t => ({ ...t, percentualTotal: individualWeight }));
+    }
+
+    const newTotalProgress = calculateTotalProgress(redistributedTasks);
+    onUpdateTasks(redistributedTasks, newTotalProgress);
   };
 
   const handleRedistributeWeights = () => {
@@ -162,13 +172,7 @@ const BudgetProgressManager: React.FC<BudgetProgressManagerProps> = ({ project, 
           {isAdmin && (
             <div className="flex gap-2">
               <button 
-                onClick={handleRedistributeWeights}
-                className="text-[9px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-900 transition-colors"
-              >
-                Redistribuir Pesos
-              </button>
-              <button 
-                onClick={() => handleOpenModal()}
+                onClick={() => setIsModalOpen(true)}
                 className="bg-slate-900 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black flex items-center gap-2 shadow-lg transition-all active:scale-95"
               >
                 <Plus size={14} className="text-amber-500" /> Adicionar Etapa
@@ -189,9 +193,15 @@ const BudgetProgressManager: React.FC<BudgetProgressManagerProps> = ({ project, 
                     <div className="flex items-center gap-2">
                       <h5 className="text-sm font-black text-slate-900 uppercase tracking-tight">{task.nome}</h5>
                       {isAdmin && (
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleOpenModal(task)} className="p-1 text-slate-400 hover:text-indigo-600"><Pencil size={12}/></button>
-                          <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-slate-400 hover:text-red-600"><Trash2 size={12}/></button>
+                        <div className="flex gap-1">
+                          <button 
+                            type="button"
+                            onClick={(e) => handleDeleteTask(e, task.id)} 
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                            title="Excluir Etapa"
+                          >
+                            <Trash2 size={14}/>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -264,49 +274,66 @@ const BudgetProgressManager: React.FC<BudgetProgressManagerProps> = ({ project, 
         </div>
       </div>
 
-      {/* MODAL: ADICIONAR/EDITAR ETAPA */}
+      {/* MODAL: SELECIONAR ETAPA DA LISTA */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden animate-scale-in border border-white/10">
-            <div className="bg-slate-900 p-8 flex justify-between items-center text-white">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-in border border-white/10 flex flex-col max-h-[90vh]">
+            <div className="bg-slate-900 p-8 flex justify-between items-center text-white shrink-0">
               <h3 className="text-xl font-black uppercase tracking-tighter flex items-center gap-3">
-                {editingTask ? <Pencil size={20} className="text-amber-500" /> : <Plus size={20} className="text-amber-500" />}
-                {editingTask ? 'Editar Etapa' : 'Nova Etapa'}
+                <Plus size={20} className="text-amber-500" /> Adicionar Etapa da Obra
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={20} /></button>
             </div>
-            <form onSubmit={handleSaveTask} className="p-8 space-y-6">
-              <div>
-                <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Nome da Etapa</label>
+            
+            <div className="p-6 bg-slate-50 border-b border-slate-100 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-4 top-3 text-slate-400" size={18} />
                 <input 
-                  required 
                   type="text" 
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900" 
-                  value={form.nome} 
-                  onChange={e => setForm({...form, nome: e.target.value})} 
-                  placeholder="Ex: Alvenaria de Elevação" 
+                  placeholder="Pesquisar etapa..." 
+                  className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Peso na Obra (%)</label>
-                <input 
-                  required 
-                  type="number" 
-                  step="0.01" 
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900" 
-                  value={form.percentualTotal} 
-                  onChange={e => setForm({...form, percentualTotal: e.target.value})} 
-                  placeholder="Ex: 15.5" 
-                />
-                <p className="text-[9px] text-slate-500 mt-2 font-bold uppercase tracking-widest">O peso define quanto esta etapa contribui para o progresso total da obra.</p>
-              </div>
-              <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
-                <button type="submit" className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2 hover:bg-black transition-all active:scale-95">
-                  <Save size={18} className="text-amber-500" /> {editingTask ? 'Atualizar' : 'Salvar'}
-                </button>
-              </div>
-            </form>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-8 custom-scrollbar">
+              {CONSTRUCTION_STAGES.map(stage => {
+                const stageTasks = filteredAvailableTasks.filter(t => t.category === stage.category);
+                if (stageTasks.length === 0) return null;
+
+                return (
+                  <div key={stage.category} className="space-y-4">
+                    <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-l-2 border-slate-200 pl-2">{stage.category}</h5>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {stageTasks.map(task => (
+                        <button
+                          key={task.name}
+                          onClick={() => handleAddTaskFromList(task.name)}
+                          className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all group"
+                        >
+                          <p className="text-[10px] font-black uppercase tracking-tight leading-tight">{task.name}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {filteredAvailableTasks.length === 0 && (
+                <div className="py-20 text-center text-slate-400 italic">
+                  <p className="text-xs font-black uppercase tracking-widest">Nenhuma etapa disponível para adicionar.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between items-center shrink-0">
+              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                O peso será recalculado automaticamente.
+              </p>
+              <button onClick={() => setIsModalOpen(false)} className="px-6 py-3 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 rounded-xl transition-all">Fechar</button>
+            </div>
           </div>
         </div>
       )}

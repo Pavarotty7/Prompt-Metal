@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Project, ProjectStatus, UserRole, Transaction, Employee, BudgetTask } from '../types';
 import { distributeWeights } from '../services/budgetService';
+import { CONSTRUCTION_STAGES, ALL_DEFAULT_TASKS } from '../constants';
 import { 
   Calendar as CalendarIcon, 
   User, 
@@ -27,6 +28,7 @@ import {
   Layers,
   Maximize2,
   FileEdit,
+  Trash2,
   Tag,
   CreditCard,
   ClipboardList,
@@ -39,93 +41,19 @@ interface ProjectsViewProps {
   transactions?: Transaction[];
   employees?: Employee[];
   onAddProject?: (project: Project) => void;
+  onUpdateProject?: (project: Project) => void;
+  onDeleteProject?: (id: string) => void;
   onSelectProject: (projectId: string) => void;
   userRole?: UserRole;
 }
-
-const CONSTRUCTION_STAGES = [
-  {
-    category: 'Preparação e Planeamento',
-    tasks: [
-      'Análise do projeto (arquitetura e especialidades)',
-      'Compatibilização de projetos',
-      'Obtenção de licenças e alvarás',
-      'Planeamento da obra (cronograma)',
-      'Orçamentação detalhada',
-      'Contratação de subempreiteiros',
-      'Plano de Segurança e Saúde (PSS)',
-      'Plano de Gestão de Resíduos (RCD)',
-      'Levantamento topográfico',
-      'Marcação da implantação'
-    ]
-  },
-  {
-    category: 'Montagem do Estaleiro',
-    tasks: [
-      'Vedação do terreno',
-      'Portão de acesso',
-      'Placa de obra obrigatória',
-      'Instalação de contentores',
-      'Instalação sanitária provisória',
-      'Ligação provisória de água',
-      'Ligação provisória de eletricidade',
-      'Zona de armazenamento de materiais',
-      'Zona de resíduos',
-      'Acessos provisórios e circulação interna',
-      'Sinalização de segurança'
-    ]
-  },
-  {
-    category: 'Movimentos de Terra',
-    tasks: [
-      'Limpeza do terreno',
-      'Decapagem da terra vegetal',
-      'Escavações para fundações',
-      'Escavações para redes enterradas',
-      'Regularização do fundo de caixa',
-      'Aterros e compactações',
-      'Drenagens periféricas'
-    ]
-  },
-  {
-    category: 'Fundações e Estrutura',
-    tasks: [
-      'Betão de limpeza',
-      'Cofragem das fundações',
-      'Colocação de armaduras',
-      'Betonagem das fundações',
-      'Impermeabilização de fundações',
-      'Muros de fundação ou cave',
-      'Pilares',
-      'Vigas',
-      'Lajes',
-      'Escadas estruturais',
-      'Descofragem',
-      'Cura do betão'
-    ]
-  },
-  {
-    category: 'Entrega da Obra',
-    tasks: [
-      'Limpeza grossa da obra',
-      'Limpeza fina',
-      'Remoção do estaleiro',
-      'Revisão final',
-      'Vistoria com o cliente',
-      'Correção de anomalias',
-      'Entrega das chaves',
-      'Início do período de garantia'
-    ]
-  }
-];
-
-const ALL_DEFAULT_TASKS = CONSTRUCTION_STAGES.flatMap(s => s.tasks);
 
 const ProjectsView: React.FC<ProjectsViewProps> = ({ 
   projects, 
   transactions = [], 
   employees = [],
   onAddProject, 
+  onUpdateProject,
+  onDeleteProject,
   onSelectProject, 
   userRole 
 }) => {
@@ -137,6 +65,7 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   
   const [formData, setFormData] = useState({
@@ -176,6 +105,33 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
     );
   };
 
+  const handleEditProject = (e: React.MouseEvent, project: Project) => {
+    e.stopPropagation();
+    setEditingProjectId(project.id);
+    setFormData({
+      name: project.name,
+      client: project.client,
+      address: project.address,
+      responsible: project.responsible,
+      startDate: project.startDate,
+      endDate: project.endDate,
+      budget: project.budget.toString(),
+      category: project.category,
+      priority: project.priority,
+      areaM2: project.areaM2?.toString() || '',
+      description: project.description || ''
+    });
+    setSelectedTasks(project.tarefas?.map(t => t.nome) || []);
+    setIsFormOpen(true);
+  };
+
+  const handleDeleteProject = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (confirm("Tem certeza que deseja excluir esta obra? Todos os dados vinculados serão perdidos.")) {
+      onDeleteProject?.(id);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) return;
@@ -185,10 +141,32 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
       return;
     }
 
-    if (onAddProject) {
-      // Distribui os pesos automaticamente para as tarefas selecionadas
-      const distributedTasks = distributeWeights(selectedTasks);
+    // Distribui os pesos automaticamente para as tarefas selecionadas
+    const distributedTasks = distributeWeights(selectedTasks);
 
+    if (editingProjectId) {
+      if (onUpdateProject) {
+        const existingProject = projects.find(p => p.id === editingProjectId);
+        if (existingProject) {
+          const updatedProject: Project = {
+            ...existingProject,
+            name: formData.name,
+            client: formData.client,
+            address: formData.address,
+            responsible: formData.responsible,
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+            budget: parseFloat(formData.budget) || 0,
+            tarefas: distributedTasks,
+            category: formData.category,
+            priority: formData.priority,
+            areaM2: parseFloat(formData.areaM2) || undefined,
+            description: formData.description,
+          };
+          onUpdateProject(updatedProject);
+        }
+      }
+    } else if (onAddProject) {
       const newProject: Project = {
         id: Math.random().toString(36).substr(2, 9),
         name: formData.name,
@@ -210,13 +188,15 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
       };
       
       onAddProject(newProject);
-      setIsFormOpen(false);
-      setSelectedTasks(ALL_DEFAULT_TASKS);
-      setFormData({
-        name: '', client: '', address: '', responsible: '', startDate: '', endDate: '', budget: '',
-        category: 'Industrial', priority: 'Normal', areaM2: '', description: ''
-      });
     }
+
+    setIsFormOpen(false);
+    setEditingProjectId(null);
+    setSelectedTasks(ALL_DEFAULT_TASKS);
+    setFormData({
+      name: '', client: '', address: '', responsible: '', startDate: '', endDate: '', budget: '',
+      category: 'Industrial', priority: 'Normal', areaM2: '', description: ''
+    });
   };
 
   const getStatusBadge = (status: ProjectStatus) => {
@@ -385,7 +365,15 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
           </div>
           {isAdmin && (
             <button 
-                onClick={() => setIsFormOpen(true)}
+                onClick={() => {
+                  setEditingProjectId(null);
+                  setFormData({
+                    name: '', client: '', address: '', responsible: '', startDate: '', endDate: '', budget: '',
+                    category: 'Industrial', priority: 'Normal', areaM2: '', description: ''
+                  });
+                  setSelectedTasks(ALL_DEFAULT_TASKS);
+                  setIsFormOpen(true);
+                }}
                 className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-black shadow-xl transition-all flex items-center gap-2 border border-amber-500/20"
             >
                 <Plus size={18} className="text-amber-500" /> Nova Obra
@@ -436,7 +424,28 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
                       <HardHat size={28} />
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                        {getStatusBadge(project.status)}
+                        <div className="flex gap-2">
+                          {isAdmin && (
+                            <>
+                              <button 
+                                onClick={(e) => handleEditProject(e, project)}
+                                className="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-sm border border-slate-200"
+                                title="Editar Obra"
+                              >
+                                <FileEdit size={16} />
+                              </button>
+                              <button 
+                                type="button"
+                                onClick={(e) => handleDeleteProject(e, project.id)}
+                                className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm border border-red-100"
+                                title="Excluir Obra"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
+                          {getStatusBadge(project.status)}
+                        </div>
                         <span className="px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 rounded text-[8px] font-black uppercase tracking-widest">{project.category}</span>
                     </div>
                   </div>
@@ -481,10 +490,10 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
             <div className="bg-slate-900 px-10 py-8 flex justify-between items-center text-white shrink-0">
               <div>
                 <h3 className="font-black text-2xl flex items-center gap-4 uppercase tracking-tighter">
-                    <HardHat size={32} className="text-amber-500" /> Cadastrar Nova Obra
+                    <HardHat size={32} className="text-amber-500" /> {editingProjectId ? 'Editar Obra' : 'Cadastrar Nova Obra'}
                 </h3>
               </div>
-              <button onClick={() => setIsFormOpen(false)} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-all"><X size={28} /></button>
+              <button onClick={() => { setIsFormOpen(false); setEditingProjectId(null); }} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-all"><X size={28} /></button>
             </div>
             
             <form onSubmit={handleSubmit} className="p-10 space-y-10 overflow-y-auto custom-scrollbar flex-1">
@@ -600,9 +609,9 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
               </div>
               
               <div className="pt-10 flex flex-col md:flex-row justify-end gap-4 border-t border-slate-100">
-                <button type="button" onClick={() => setIsFormOpen(false)} className="px-10 py-5 text-slate-500 font-black uppercase text-[11px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                <button type="button" onClick={() => { setIsFormOpen(false); setEditingProjectId(null); }} className="px-10 py-5 text-slate-500 font-black uppercase text-[11px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
                 <button type="submit" disabled={selectedTasks.length === 0} className="bg-slate-900 text-white px-14 py-5 rounded-[1.5rem] font-black shadow-2xl hover:bg-black active:scale-95 transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-sm border-2 border-emerald-500/30 disabled:opacity-50">
-                  <Save size={22} className="text-amber-500"/> Finalizar Cadastro de Obra
+                  <Save size={22} className="text-amber-500"/> {editingProjectId ? 'Salvar Alterações' : 'Finalizar Cadastro de Obra'}
                 </button>
               </div>
             </form>
