@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import { google } from "googleapis";
@@ -9,7 +10,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
+const isProduction = process.env.NODE_ENV === "production";
+
+app.set("trust proxy", 1);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
@@ -17,7 +22,7 @@ app.use(cookieParser());
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  `${process.env.APP_URL}/auth/google/callback`
+  `${APP_URL}/auth/google/callback`
 );
 
 const SCOPES = [
@@ -27,6 +32,12 @@ const SCOPES = [
 
 // Auth Routes
 app.get("/api/auth/google/url", (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.status(500).json({
+      error: "Google OAuth não configurado. Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET."
+    });
+  }
+
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
@@ -39,13 +50,13 @@ app.get("/auth/google/callback", async (req, res) => {
   const { code } = req.query;
   try {
     const { tokens } = await oauth2Client.getToken(code as string);
-    
+
     // Store refresh token in a secure cookie
     if (tokens.refresh_token) {
       res.cookie('google_refresh_token', tokens.refresh_token, {
         httpOnly: true,
-        secure: true,
-        sameSite: 'none',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
     }
@@ -73,13 +84,14 @@ app.get("/auth/google/callback", async (req, res) => {
 
 app.get("/api/auth/google/status", (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  res.json({ connected: !!refreshToken });
+  const connected = !!refreshToken;
+  res.json({ connected, isAuthenticated: connected });
 });
 
 app.post("/api/auth/google/logout", (req, res) => {
   res.clearCookie('google_refresh_token', {
-    secure: true,
-    sameSite: 'none'
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax'
   });
   res.json({ success: true });
 });
