@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { Vehicle, VehicleDocument, MaintenanceRecord, UserRole } from '../types';
+import { driveService } from '../services/driveService';
 import { 
   Truck, 
   Wrench, 

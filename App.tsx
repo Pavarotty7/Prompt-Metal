@@ -148,6 +148,35 @@ const App: React.FC = () => {
     setCurrentView(view);
   }, []);
 
+  // Automatic Backup to Google Drive
+  useEffect(() => {
+    const triggerBackup = async () => {
+      try {
+        const statusRes = await fetch('/api/auth/google/status');
+        const { connected } = await statusRes.json();
+        
+        if (connected) {
+          const data = databaseService.getAllData();
+          await fetch('/api/drive/backup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data,
+              filename: `auto_backup_${new Date().toISOString().split('T')[0]}.json`
+            })
+          });
+          console.log("Automatic backup completed");
+        }
+      } catch (error) {
+        console.error("Auto-backup failed:", error);
+      }
+    };
+
+    // Trigger backup after a delay when projects or transactions change
+    const timer = setTimeout(triggerBackup, 5000); // 5 seconds delay
+    return () => clearTimeout(timer);
+  }, [projects, transactions, employees, vehicles, timesheetRecords, notes]);
+
   const handleRefreshData = useCallback(() => {
     setProjects(databaseService.getProjects());
     setTransactions(databaseService.getTransactions());

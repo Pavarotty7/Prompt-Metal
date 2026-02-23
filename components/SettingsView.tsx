@@ -1,7 +1,13 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, ShieldCheck, Database, AlertTriangle, Cloud, CloudOff, RefreshCw } from 'lucide-react';
+import { Download, Upload, ShieldCheck, Database, AlertTriangle, Cloud, CloudOff, RefreshCw, History, CheckCircle2 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
+
+interface DriveHistoryItem {
+  id: string;
+  name: string;
+  createdTime: string;
+}
 
 interface SettingsViewProps {
   onImportSuccess: () => void;
@@ -9,96 +15,88 @@ interface SettingsViewProps {
 
 const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isGoogleAuth, setIsGoogleAuth] = useState(false);
+  const [isDriveConnected, setIsDriveConnected] = useState(false);
+  const [driveHistory, setDriveHistory] = useState<DriveHistoryItem[]>([]);
   const [isBackingUp, setIsBackingUp] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
 
   useEffect(() => {
-    checkGoogleAuth();
-
+    checkDriveStatus();
+    
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-        setIsGoogleAuth(true);
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        checkDriveStatus();
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const checkGoogleAuth = async () => {
+  const checkDriveStatus = async () => {
     try {
-      const response = await fetch('/api/auth/google/status');
-      const data = await response.json();
-      setIsGoogleAuth(data.isAuthenticated);
+      const res = await fetch('/api/auth/google/status');
+      const data = await res.json();
+      setIsDriveConnected(data.connected);
+      if (data.connected) {
+        fetchDriveHistory();
+      }
     } catch (error) {
-      console.error('Error checking Google auth status:', error);
+      console.error("Error checking drive status:", error);
     }
   };
 
-  const handleConnectGoogle = async () => {
+  const fetchDriveHistory = async () => {
     try {
-      const response = await fetch('/api/auth/google/url');
-      const { url } = await response.json();
-      window.open(url, 'google_auth', 'width=600,height=700');
+      const res = await fetch('/api/drive/history');
+      const data = await res.json();
+      setDriveHistory(data.history || []);
     } catch (error) {
-      console.error('Error getting Google auth URL:', error);
-      alert('Erro ao conectar com o Google.');
+      console.error("Error fetching history:", error);
     }
   };
 
-  const handleDisconnectGoogle = async () => {
+  const handleConnectDrive = async () => {
+    try {
+      const res = await fetch('/api/auth/google/url');
+      const { url } = await res.json();
+      window.open(url, 'google_oauth', 'width=600,height=700');
+    } catch (error) {
+      console.error("Error getting auth url:", error);
+    }
+  };
+
+  const handleDisconnectDrive = async () => {
+    if (!confirm("Deseja desconectar sua conta do Google Drive?")) return;
     try {
       await fetch('/api/auth/google/logout', { method: 'POST' });
-      setIsGoogleAuth(false);
+      setIsDriveConnected(false);
+      setDriveHistory([]);
     } catch (error) {
-      console.error('Error logging out of Google:', error);
+      console.error("Error logging out:", error);
     }
   };
 
-  const handleBackupToDrive = async () => {
+  const handleDriveBackup = async () => {
     setIsBackingUp(true);
     try {
       const data = databaseService.getAllData();
-      const response = await fetch('/api/drive/backup', {
+      const res = await fetch('/api/drive/backup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          data,
+          filename: `promptmetal_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+        })
       });
-
-      if (response.ok) {
-        alert('Backup salvo com sucesso no seu Google Drive!');
-      } else {
-        const err = await response.json();
-        alert(`Erro ao salvar backup: ${err.error}`);
+      const result = await res.json();
+      if (result.success) {
+        setDriveHistory(result.history);
+        alert("Backup realizado com sucesso no Google Drive!");
       }
     } catch (error) {
-      console.error('Error backing up to Drive:', error);
-      alert('Erro de conexão ao salvar backup.');
+      console.error("Backup error:", error);
+      alert("Erro ao realizar backup.");
     } finally {
       setIsBackingUp(false);
-    }
-  };
-
-  const handleRestoreFromDrive = async () => {
-    if (!confirm("Isso irá substituir todos os dados atuais pelos dados do Google Drive. Deseja continuar?")) return;
-
-    setIsRestoring(true);
-    try {
-      const response = await fetch('/api/drive/restore');
-      if (response.ok) {
-        const data = await response.json();
-        databaseService.importAllData(data);
-        onImportSuccess();
-        alert('Dados restaurados com sucesso do Google Drive!');
-      } else {
-        const err = await response.json();
-        alert(`Erro ao restaurar: ${err.error}`);
-      }
-    } catch (error) {
-      console.error('Error restoring from Drive:', error);
-      alert('Erro de conexão ao restaurar backup.');
-    } finally {
-      setIsRestoring(false);
     }
   };
 
@@ -150,56 +148,87 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-200">
-          <div className="flex items-center gap-4 mb-8">
-            <div className={`p-4 rounded-2xl ${isGoogleAuth ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
-              <Cloud size={24} />
+        {/* Google Drive Integration */}
+        <div className="bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-200 md:col-span-2">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+            <div className="flex items-center gap-4">
+              <div className={`p-4 rounded-2xl ${isDriveConnected ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                {isDriveConnected ? <Cloud size={24} /> : <CloudOff size={24} />}
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Google Drive Sync</h3>
+                <p className="text-xs text-slate-500 font-bold uppercase">Backup automático e sincronização na nuvem</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Google Drive Cloud</h3>
-              <p className="text-xs text-slate-500 font-bold uppercase">Sincronização em nuvem</p>
-            </div>
+            
+            {isDriveConnected ? (
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleDriveBackup}
+                  disabled={isBackingUp}
+                  className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all disabled:opacity-50"
+                >
+                  {isBackingUp ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  Sincronizar Agora
+                </button>
+                <button 
+                  onClick={handleDisconnectDrive}
+                  className="flex items-center gap-2 bg-white border border-red-200 text-red-600 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition-all"
+                >
+                  Desconectar
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={handleConnectDrive}
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+              >
+                <Cloud size={16} /> Conectar Google Drive
+              </button>
+            )}
           </div>
 
-          {!isGoogleAuth ? (
-            <div className="space-y-6">
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Conecte sua conta Google para salvar seus backups automaticamente na nuvem e acessá-los de qualquer dispositivo.
-              </p>
-              <button 
-                onClick={handleConnectGoogle}
-                className="w-full flex items-center justify-center gap-3 bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl"
-              >
-                Conectar Google Drive
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-blue-50 rounded-2xl border border-blue-100 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                  <span className="text-[10px] font-black text-blue-900 uppercase tracking-widest">Conectado</span>
+          {isDriveConnected && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-4">
+                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  <History size={14} /> Histórico de Backups (Últimos 3)
                 </div>
-                <button onClick={handleDisconnectGoogle} className="text-[10px] font-black text-slate-400 uppercase hover:text-red-600 transition-colors">Desconectar</button>
+                <div className="space-y-3">
+                  {driveHistory.length > 0 ? driveHistory.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle2 size={16} className="text-emerald-500" />
+                        <div>
+                          <p className="text-xs font-black text-slate-900 uppercase truncate max-w-[200px] md:max-w-md">{item.name}</p>
+                          <p className="text-[9px] text-slate-500 font-bold uppercase">{new Date(item.createdTime).toLocaleString('pt-PT')}</p>
+                        </div>
+                      </div>
+                      <span className="text-[8px] font-black bg-emerald-100 text-emerald-700 px-2 py-1 rounded uppercase">Salvo</span>
+                    </div>
+                  )) : (
+                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhum backup encontrado</p>
+                    </div>
+                  )}
+                </div>
               </div>
-
-              <div className="grid grid-cols-1 gap-3">
-                <button 
-                  onClick={handleBackupToDrive}
-                  disabled={isBackingUp}
-                  className="w-full flex items-center justify-center gap-3 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg disabled:opacity-50"
-                >
-                  {isBackingUp ? <RefreshCw size={18} className="animate-spin" /> : <Cloud size={18} className="text-blue-400" />}
-                  Salvar no Drive
-                </button>
-                <button 
-                  onClick={handleRestoreFromDrive}
-                  disabled={isRestoring}
-                  className="w-full flex items-center justify-center gap-3 bg-white border-2 border-slate-900 text-slate-900 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-50 transition-all disabled:opacity-50"
-                >
-                  {isRestoring ? <RefreshCw size={18} className="animate-spin" /> : <RefreshCw size={18} />}
-                  Buscar do Drive
-                </button>
+              <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100">
+                <h4 className="text-[10px] font-black text-blue-900 uppercase tracking-widest mb-3">Como funciona?</h4>
+                <ul className="space-y-3">
+                  <li className="flex gap-2 text-[9px] font-bold text-blue-800 uppercase leading-relaxed">
+                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mt-1 shrink-0"></div>
+                    Os dados são salvos na pasta "PromptMetal Backups" no seu Drive.
+                  </li>
+                  <li className="flex gap-2 text-[9px] font-bold text-blue-800 uppercase leading-relaxed">
+                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mt-1 shrink-0"></div>
+                    Mantemos apenas os 3 backups mais recentes para economizar espaço.
+                  </li>
+                  <li className="flex gap-2 text-[9px] font-bold text-blue-800 uppercase leading-relaxed">
+                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mt-1 shrink-0"></div>
+                    A sincronização garante que você nunca perca seus projetos.
+                  </li>
+                </ul>
               </div>
             </div>
           )}

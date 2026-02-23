@@ -173,9 +173,48 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     });
   };
 
-  const handleSaveDoc = (e: React.FormEvent) => {
+  const handleSaveDoc = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin || !onUpdateProject) return;
+
+    let driveUrl = undefined;
+    
+    // Upload to Google Drive if connected
+    if (docAttachment) {
+      try {
+        const statusRes = await fetch('/api/auth/google/status');
+        const { connected } = await statusRes.json();
+        
+        if (connected) {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve) => {
+            reader.onload = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve(base64);
+            };
+            reader.readAsDataURL(docAttachment);
+          });
+          
+          const base64 = await base64Promise;
+          const uploadRes = await fetch('/api/drive/upload-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: docAttachment.name,
+              mimeType: docAttachment.type,
+              content: base64,
+              folderName: `PromptMetal - ${project.name}`
+            })
+          });
+          const uploadData = await uploadRes.json();
+          if (uploadData.success) {
+            driveUrl = uploadData.url;
+          }
+        }
+      } catch (error) {
+        console.error("Error syncing to Drive:", error);
+      }
+    }
 
     const newDoc: ProjectDocument = {
       id: Math.random().toString(36).substr(2, 9),
@@ -184,7 +223,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
       uploadDate: new Date().toISOString().split('T')[0],
       status: 'Válido',
       fileName: docAttachment?.name || 'anexo.pdf',
-      url: docAttachment ? URL.createObjectURL(docAttachment) : undefined
+      url: driveUrl || (docAttachment ? URL.createObjectURL(docAttachment) : undefined)
     };
 
     onUpdateProject({
