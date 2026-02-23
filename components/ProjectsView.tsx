@@ -192,9 +192,7 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
 
     setIsFormOpen(false);
     setEditingProjectId(null);
-    setSelectedTasks(ALL_DEFAULT_TASKS.filter(task => 
-      !CONSTRUCTION_STAGES.find(s => s.category === 'Preparação e Planeamento')?.tasks.includes(task)
-    ));
+    setSelectedTasks([]);
     setFormData({
       name: '', client: '', address: '', responsible: '', startDate: '', endDate: '', budget: '',
       category: 'Industrial', priority: 'Normal', areaM2: '', description: ''
@@ -373,9 +371,7 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
                     name: '', client: '', address: '', responsible: '', startDate: '', endDate: '', budget: '',
                     category: 'Industrial', priority: 'Normal', areaM2: '', description: ''
                   });
-                  setSelectedTasks(ALL_DEFAULT_TASKS.filter(task => 
-                    !CONSTRUCTION_STAGES.find(s => s.category === 'Preparação e Planeamento')?.tasks.includes(task)
-                  ));
+                  setSelectedTasks([]);
                   setIsFormOpen(true);
                 }}
                 className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-black shadow-xl transition-all flex items-center gap-2 border border-amber-500/20"

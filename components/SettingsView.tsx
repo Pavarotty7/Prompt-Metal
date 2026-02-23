@@ -11,21 +11,57 @@ interface DriveHistoryItem {
 
 interface SettingsViewProps {
   onImportSuccess: () => void;
+  onCloudConnectionChange: (connected: boolean) => void;
 }
 
-const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
+const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudConnectionChange }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [driveHistory, setDriveHistory] = useState<DriveHistoryItem[]>([]);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
 
+  const confirmDriveConnection = async (retries = 12, intervalMs = 1000) => {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const res = await fetch('/api/auth/google/status', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.connected) {
+            setIsDriveConnected(true);
+            onCloudConnectionChange(true);
+            setBackupStatusMessage('Google Drive conectado com sucesso.');
+            await fetchDriveHistory();
+            return true;
+          }
+        }
+      } catch {
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+    }
+
+    setIsDriveConnected(false);
+    onCloudConnectionChange(false);
+    setBackupStatusMessage('Login concluído, mas a sessão não foi confirmada. Clique em Conectar Google Drive novamente.');
+    return false;
+  };
+
   useEffect(() => {
     checkDriveStatus();
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        checkDriveStatus();
+        confirmDriveConnection();
+        return;
+      }
+
+      if (event.data?.type === 'OAUTH_AUTH_ERROR') {
+        const message = event.data?.message || 'Falha ao concluir autenticação com Google Drive.';
+        setIsDriveConnected(false);
+        onCloudConnectionChange(false);
+        setBackupStatusMessage(message);
+        alert(message);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -37,17 +73,20 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
       const res = await fetch('/api/auth/google/status', { credentials: 'include' });
       if (!res.ok) {
         setIsDriveConnected(false);
+        onCloudConnectionChange(false);
         return;
       }
 
       const data = await res.json();
       setIsDriveConnected(data.connected);
+      onCloudConnectionChange(!!data.connected);
       if (data.connected) {
         await fetchDriveHistory();
       }
     } catch (error) {
       console.error("Error checking drive status:", error);
       setIsDriveConnected(false);
+      onCloudConnectionChange(false);
     }
   };
 
@@ -95,6 +134,15 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
       }
 
       popup.location.href = authUrl;
+
+      const startedAt = Date.now();
+      const monitor = window.setInterval(() => {
+        const timedOut = Date.now() - startedAt > 2 * 60 * 1000;
+        if (popup.closed || timedOut) {
+          window.clearInterval(monitor);
+          confirmDriveConnection();
+        }
+      }, 1000);
     } catch (error) {
       console.error("Error getting auth url:", error);
       popup.close();
@@ -107,6 +155,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
     try {
       await fetch('/api/auth/google/logout', { method: 'POST', credentials: 'include' });
       setIsDriveConnected(false);
+      onCloudConnectionChange(false);
       setDriveHistory([]);
       setBackupStatusMessage(null);
     } catch (error) {
@@ -247,7 +296,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
                   className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all disabled:opacity-50"
                 >
                   {isBackingUp ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  Sincronizar Agora
+                  Salvar no Google Drive
                 </button>
                 <button
                   onClick={handleDisconnectDrive}
@@ -266,14 +315,21 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
             )}
           </div>
 
+          {backupStatusMessage && (
+            <div className="mb-6 p-3 rounded-xl border border-slate-200 bg-slate-50">
+              <p className="text-[10px] font-black text-slate-700 uppercase tracking-wider">{backupStatusMessage}</p>
+            </div>
+          )}
+
+          {isDriveConnected && (
+            <div className="mb-6 p-3 rounded-xl border border-emerald-200 bg-emerald-50">
+              <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">Auto-save no Firestore ativo. Não é necessário clicar em salvar.</p>
+            </div>
+          )}
+
           {isDriveConnected && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-4">
-                {backupStatusMessage && (
-                  <div className="p-3 rounded-xl border border-slate-200 bg-slate-50">
-                    <p className="text-[10px] font-black text-slate-700 uppercase tracking-wider">{backupStatusMessage}</p>
-                  </div>
-                )}
                 <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                   <History size={14} /> Histórico de Backups (Últimos 3)
                 </div>

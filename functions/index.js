@@ -17,7 +17,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
 
 const APP_URL = process.env.APP_URL || "https://prompt-metal.web.app";
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const IS_HTTPS_APP = APP_URL.startsWith("https://");
 
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -58,11 +58,30 @@ async function getAuthenticatedUserEmail(refreshToken) {
     return String(data.email).toLowerCase();
 }
 
+function normalizeUserId(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+async function resolveFirestoreUserId(req) {
+    const refreshToken = req.cookies.google_refresh_token;
+    if (refreshToken) {
+        return await getAuthenticatedUserEmail(refreshToken);
+    }
+
+    const fallbackUserId = normalizeUserId(req.body?.userId || req.query?.userId);
+    if (!fallbackUserId) {
+        return "";
+    }
+
+    return fallbackUserId;
+}
+
 function cookieOptions() {
     return {
         httpOnly: true,
-        secure: IS_PRODUCTION,
-        sameSite: IS_PRODUCTION ? "none" : "lax",
+        secure: IS_HTTPS_APP,
+        sameSite: IS_HTTPS_APP ? "none" : "lax",
+        path: "/",
         maxAge: 30 * 24 * 60 * 60 * 1000,
     };
 }
@@ -90,9 +109,25 @@ app.get("/auth/google/callback", async (req, res) => {
     try {
         const { tokens } = await oauth2Client.getToken(code);
 
-        if (tokens.refresh_token) {
-            res.cookie("google_refresh_token", tokens.refresh_token, cookieOptions());
+        if (!tokens.refresh_token) {
+            return res.send(`
+            <html>
+                <body>
+                    <script>
+                        if (window.opener) {
+                            window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', message: 'Google não retornou refresh token. Remova o acesso do app em myaccount.google.com/permissions e tente conectar novamente.' }, '*');
+                            window.close();
+                        } else {
+                            window.location.href = '/';
+                        }
+                    </script>
+                    <p>Falha ao concluir autenticação. O Google não retornou refresh token.</p>
+                </body>
+            </html>
+        `);
         }
+
+        res.cookie("google_refresh_token", tokens.refresh_token, cookieOptions());
 
         res.send(`
       <html>
@@ -123,8 +158,10 @@ app.get("/api/auth/google/status", (req, res) => {
 
 app.post("/api/auth/google/logout", (req, res) => {
     res.clearCookie("google_refresh_token", {
-        secure: IS_PRODUCTION,
-        sameSite: IS_PRODUCTION ? "none" : "lax",
+        httpOnly: true,
+        secure: IS_HTTPS_APP,
+        sameSite: IS_HTTPS_APP ? "none" : "lax",
+        path: "/",
     });
     res.json({ success: true });
 });
@@ -270,14 +307,13 @@ app.post("/api/drive/upload-file", async (req, res) => {
 });
 
 app.get("/api/data/load", async (req, res) => {
-    const refreshToken = req.cookies.google_refresh_token;
-    if (!refreshToken) {
-        return res.status(401).json({ error: "Not connected" });
-    }
-
     try {
-        const userEmail = await getAuthenticatedUserEmail(refreshToken);
-        const docRef = db.collection("promptmetalUsers").doc(userEmail);
+        const userId = await resolveFirestoreUserId(req);
+        if (!userId) {
+            return res.status(401).json({ error: "Usuário não autenticado para carregar dados" });
+        }
+
+        const docRef = db.collection("promptmetalUsers").doc(userId);
         const snapshot = await docRef.get();
 
         if (!snapshot.exists) {
@@ -293,20 +329,19 @@ app.get("/api/data/load", async (req, res) => {
 });
 
 app.post("/api/data/save", async (req, res) => {
-    const refreshToken = req.cookies.google_refresh_token;
-    if (!refreshToken) {
-        return res.status(401).json({ error: "Not connected" });
-    }
-
     try {
-        const userEmail = await getAuthenticatedUserEmail(refreshToken);
+        const userId = await resolveFirestoreUserId(req);
+        if (!userId) {
+            return res.status(401).json({ error: "Usuário não autenticado para salvar dados" });
+        }
+
         const { data } = req.body;
 
         if (!data) {
             return res.status(400).json({ error: "Payload de dados ausente" });
         }
 
-        await db.collection("promptmetalUsers").doc(userEmail).set(
+        await db.collection("promptmetalUsers").doc(userId).set(
             {
                 data,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),

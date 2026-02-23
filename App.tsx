@@ -20,6 +20,17 @@ import { databaseService } from './services/databaseService';
 
 type CloudSyncStatus = 'idle' | 'saving' | 'saved' | 'error' | 'offline';
 
+const APP_STORAGE_KEYS = {
+  ROLE: 'promptmetal_role',
+  SESSION_ROLE: 'promptmetal_session_role',
+  USER_ID: 'promptmetal_user_id',
+  SESSION_USER_ID: 'promptmetal_session_user_id',
+  CURRENT_VIEW: 'promptmetal_view',
+  SELECTED_PROJECT_ID: 'promptmetal_selected_project'
+} as const;
+
+const VALID_VIEWS: ViewState[] = ['home', 'dashboard', 'projects', 'schedule', 'finance', 'fleet', 'ai-analysis', 'team', 'project-detail', 'timesheet', 'corporate-cards', 'notes', 'settings'];
+
 const App: React.FC = () => {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const [currentView, setCurrentView] = useState<ViewState>('home');
@@ -31,9 +42,11 @@ const App: React.FC = () => {
   const [timesheetRecords, setTimesheetRecords] = useState<TimesheetRecord[]>([]);
   const [scheduleTasks, setScheduleTasks] = useState<ScheduleTask[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [cloudUserId, setCloudUserId] = useState<string | null>(null);
   const [notes, setNotes] = useState<DailyNote[]>([]);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [cloudDataLoaded, setCloudDataLoaded] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('idle');
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<Date | null>(null);
   const isApplyingCloudData = useRef(false);
@@ -51,11 +64,63 @@ const App: React.FC = () => {
     setNotes(databaseService.getNotes());
   }, []);
 
-  // Carregar dados locais e sincronizar com Firestore (quando conectado ao Google)
+  const loadCloudData = useCallback(async (explicitUserId?: string) => {
+    const userId = (explicitUserId || cloudUserId || '').trim().toLowerCase();
+
+    if (!userId) {
+      setCloudSyncStatus('offline');
+      setCloudDataLoaded(false);
+      return false;
+    }
+
+    try {
+      const loadRes = await fetch(`/api/data/load?userId=${encodeURIComponent(userId)}`, { credentials: 'include' });
+      if (!loadRes.ok) {
+        setCloudSyncStatus('error');
+        setCloudDataLoaded(false);
+        return false;
+      }
+
+      const payload = await loadRes.json();
+      if (payload?.success && payload?.data) {
+        isApplyingCloudData.current = true;
+        applyDataToState(payload.data);
+        setTimeout(() => {
+          isApplyingCloudData.current = false;
+        }, 0);
+      }
+
+      setCloudDataLoaded(true);
+      setCloudSyncStatus('saved');
+      setLastCloudSyncAt(new Date());
+      return true;
+    } catch (error) {
+      console.warn('Cloud load failed:', error);
+      setCloudSyncStatus('error');
+      setCloudDataLoaded(false);
+      return false;
+    }
+  }, [applyDataToState, cloudUserId]);
+
+  // Carregar dados iniciais do Local Storage
   useEffect(() => {
     const initializeData = async () => {
-      const savedRole = localStorage.getItem('promptmetal_role') as UserRole;
-      if (savedRole) setUserRole(savedRole);
+      const savedRole = (localStorage.getItem(APP_STORAGE_KEYS.ROLE) || sessionStorage.getItem(APP_STORAGE_KEYS.SESSION_ROLE)) as UserRole;
+      const savedUserId = (localStorage.getItem(APP_STORAGE_KEYS.USER_ID) || sessionStorage.getItem(APP_STORAGE_KEYS.SESSION_USER_ID) || '').trim().toLowerCase();
+      if (savedRole) {
+        setUserRole(savedRole);
+        if (savedUserId) {
+          setCloudUserId(savedUserId);
+          setIsCloudConnected(true);
+        }
+        const savedViewRaw = localStorage.getItem(APP_STORAGE_KEYS.CURRENT_VIEW);
+        if (savedViewRaw && VALID_VIEWS.includes(savedViewRaw as ViewState)) {
+          setCurrentView(savedViewRaw as ViewState);
+        }
+
+        const savedProjectId = localStorage.getItem(APP_STORAGE_KEYS.SELECTED_PROJECT_ID);
+        if (savedProjectId) setSelectedProjectId(savedProjectId);
+      }
 
       setProjects(databaseService.getProjects());
       setTransactions(databaseService.getTransactions());
@@ -66,54 +131,76 @@ const App: React.FC = () => {
       setNotes(databaseService.getNotes());
 
       try {
-        const statusRes = await fetch('/api/auth/google/status', { credentials: 'include' });
-        if (!statusRes.ok) {
+        if (savedUserId) {
+          await loadCloudData(savedUserId);
+        } else {
           setCloudSyncStatus('offline');
-          setHasHydrated(true);
-          return;
+          setCloudDataLoaded(false);
         }
-
-        const { connected } = await statusRes.json();
-        setIsCloudConnected(!!connected);
-
-        if (!connected) {
-          setCloudSyncStatus('offline');
-          setHasHydrated(true);
-          return;
-        }
-
-        const loadRes = await fetch('/api/data/load', { credentials: 'include' });
-        if (!loadRes.ok) {
-          setHasHydrated(true);
-          return;
-        }
-
-        const payload = await loadRes.json();
-        if (payload?.success && payload?.data) {
-          isApplyingCloudData.current = true;
-          applyDataToState(payload.data);
-          setTimeout(() => {
-            isApplyingCloudData.current = false;
-          }, 0);
-        }
-
-        setCloudSyncStatus('saved');
-        setLastCloudSyncAt(new Date());
       } catch (error) {
         console.warn('Cloud init skipped:', error);
         setCloudSyncStatus('error');
+        setCloudDataLoaded(false);
       } finally {
         setHasHydrated(true);
       }
     };
 
     initializeData();
-  }, [applyDataToState]);
+  }, [loadCloudData]);
 
-  const handleSetRole = useCallback((role: UserRole, stayLoggedIn: boolean) => {
+  useEffect(() => {
+    if (!userRole) return;
+    localStorage.setItem(APP_STORAGE_KEYS.CURRENT_VIEW, currentView);
+  }, [userRole, currentView]);
+
+  useEffect(() => {
+    if (!userRole) return;
+
+    if (selectedProjectId) {
+      localStorage.setItem(APP_STORAGE_KEYS.SELECTED_PROJECT_ID, selectedProjectId);
+    } else {
+      localStorage.removeItem(APP_STORAGE_KEYS.SELECTED_PROJECT_ID);
+    }
+  }, [userRole, selectedProjectId]);
+
+  useEffect(() => {
+    if (currentView === 'project-detail' && !selectedProjectId) {
+      setCurrentView('projects');
+    }
+  }, [currentView, selectedProjectId]);
+
+  // Sempre carregar da nuvem ao detectar conexão em um navegador/sessão nova
+  useEffect(() => {
+    if (!hasHydrated) return;
+
+    if (!isCloudConnected) {
+      setCloudDataLoaded(false);
+      return;
+    }
+
+    if (cloudDataLoaded) return;
+    loadCloudData();
+  }, [hasHydrated, isCloudConnected, cloudDataLoaded, loadCloudData]);
+
+  const handleSetRole = useCallback((role: UserRole, stayLoggedIn: boolean, userId: string) => {
     setUserRole(role);
-    if (stayLoggedIn && role) {
-      localStorage.setItem('promptmetal_role', role);
+    if (!role) return;
+
+    const normalizedUserId = userId.trim().toLowerCase();
+    setCloudUserId(normalizedUserId);
+    setIsCloudConnected(true);
+
+    if (stayLoggedIn) {
+      localStorage.setItem(APP_STORAGE_KEYS.ROLE, role);
+      localStorage.setItem(APP_STORAGE_KEYS.USER_ID, normalizedUserId);
+      sessionStorage.removeItem(APP_STORAGE_KEYS.SESSION_ROLE);
+      sessionStorage.removeItem(APP_STORAGE_KEYS.SESSION_USER_ID);
+    } else {
+      sessionStorage.setItem(APP_STORAGE_KEYS.SESSION_ROLE, role);
+      sessionStorage.setItem(APP_STORAGE_KEYS.SESSION_USER_ID, normalizedUserId);
+      localStorage.removeItem(APP_STORAGE_KEYS.ROLE);
+      localStorage.removeItem(APP_STORAGE_KEYS.USER_ID);
     }
   }, []);
 
@@ -214,16 +301,38 @@ const App: React.FC = () => {
   const handleLogout = useCallback(() => {
     setUserRole(null);
     setCurrentView('home');
-    localStorage.removeItem('promptmetal_role');
+    setSelectedProjectId(null);
+    setCloudUserId(null);
+    setIsCloudConnected(false);
+    setCloudDataLoaded(false);
+    setCloudSyncStatus('offline');
+    localStorage.removeItem(APP_STORAGE_KEYS.ROLE);
+    localStorage.removeItem(APP_STORAGE_KEYS.USER_ID);
+    sessionStorage.removeItem(APP_STORAGE_KEYS.SESSION_ROLE);
+    sessionStorage.removeItem(APP_STORAGE_KEYS.SESSION_USER_ID);
+    localStorage.removeItem(APP_STORAGE_KEYS.CURRENT_VIEW);
+    localStorage.removeItem(APP_STORAGE_KEYS.SELECTED_PROJECT_ID);
   }, []);
 
   const handleViewChange = useCallback((view: ViewState) => {
     setCurrentView(view);
   }, []);
 
+  const handleCloudConnectionChange = useCallback((connected: boolean) => {
+    if (!cloudUserId) return;
+
+    if (connected) {
+      setIsCloudConnected(true);
+      if (!cloudDataLoaded) {
+        setCloudSyncStatus('idle');
+      }
+    }
+  }, [cloudUserId, cloudDataLoaded]);
+
   // Auto-save no Firestore (quando Google estiver conectado)
   useEffect(() => {
-    if (!hasHydrated || !isCloudConnected || isApplyingCloudData.current) return;
+    if (!hasHydrated || !isCloudConnected || !cloudDataLoaded || isApplyingCloudData.current) return;
+    if (!cloudUserId) return;
 
     setCloudSyncStatus('saving');
 
@@ -233,7 +342,7 @@ const App: React.FC = () => {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: databaseService.getAllData() })
+          body: JSON.stringify({ userId: cloudUserId, data: databaseService.getAllData() })
         });
 
         if (!saveRes.ok) {
@@ -250,7 +359,7 @@ const App: React.FC = () => {
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [hasHydrated, isCloudConnected, projects, transactions, employees, vehicles, timesheetRecords, scheduleTasks, notes]);
+  }, [hasHydrated, isCloudConnected, cloudDataLoaded, cloudUserId, projects, transactions, employees, vehicles, timesheetRecords, scheduleTasks, notes]);
 
   // Automatic Backup to Google Drive
   useEffect(() => {
@@ -279,29 +388,28 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [hasHydrated, isCloudConnected, projects, transactions, employees, vehicles, timesheetRecords, scheduleTasks, notes]);
 
-  // Atualiza status de conexão ao voltar foco para a aba
+  // Atualiza status da conexão Google Drive ao voltar foco para a aba (apenas backup Drive)
   useEffect(() => {
+    if (!cloudUserId) return;
+
     const refreshCloudStatus = async () => {
       try {
         const statusRes = await fetch('/api/auth/google/status', { credentials: 'include' });
         if (!statusRes.ok) {
-          setIsCloudConnected(false);
-          setCloudSyncStatus('offline');
           return;
         }
 
         const { connected } = await statusRes.json();
-        setIsCloudConnected(!!connected);
-        setCloudSyncStatus(connected ? 'idle' : 'offline');
+        if (connected && !cloudDataLoaded) {
+          loadCloudData();
+        }
       } catch {
-        setIsCloudConnected(false);
-        setCloudSyncStatus('offline');
       }
     };
 
     window.addEventListener('focus', refreshCloudStatus);
     return () => window.removeEventListener('focus', refreshCloudStatus);
-  }, []);
+  }, [cloudUserId, cloudDataLoaded, loadCloudData]);
 
   const handleRefreshData = useCallback(() => {
     setProjects(databaseService.getProjects());
@@ -389,7 +497,7 @@ const App: React.FC = () => {
       case 'timesheet': return <TimesheetView employees={employees} projects={projects} records={timesheetRecords} onAddBatch={handleAddTimesheetBatch} onDeleteRecord={handleDeleteTimesheet} userRole={userRole} />;
       case 'corporate-cards': return <CorporateCardView employees={employees} onUpdateEmployee={handleUpdateEmployee} userRole={userRole} />;
       case 'notes': return <NotesView notes={notes} onAddNote={handleAddNote} onUpdateNote={handleUpdateNote} onDeleteNote={handleDeleteNote} userRole={userRole} />;
-      case 'settings': return <SettingsView onImportSuccess={handleRefreshData} />;
+      case 'settings': return <SettingsView onImportSuccess={handleRefreshData} onCloudConnectionChange={handleCloudConnectionChange} />;
       case 'ai-analysis': return <AIAdvisor projects={projects} transactions={transactions} fleet={vehicles} />;
       default: return <Dashboard projects={projects} transactions={transactions} userRole={userRole} onNavigate={handleViewChange} />;
     }
