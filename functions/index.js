@@ -2,6 +2,13 @@ const { onRequest } = require("firebase-functions/v2/https");
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const { google } = require("googleapis");
+const admin = require("firebase-admin");
+
+if (!admin.apps.length) {
+    admin.initializeApp();
+}
+
+const db = admin.firestore();
 
 const app = express();
 
@@ -21,6 +28,7 @@ const oauth2Client = new google.auth.OAuth2(
 const SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/userinfo.email",
 ];
 
 function requireOAuthEnv(res) {
@@ -36,6 +44,18 @@ function requireOAuthEnv(res) {
 function getDriveClient(refreshToken) {
     oauth2Client.setCredentials({ refresh_token: refreshToken });
     return google.drive({ version: "v3", auth: oauth2Client });
+}
+
+async function getAuthenticatedUserEmail(refreshToken) {
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
+    const { data } = await oauth2.userinfo.get();
+
+    if (!data?.email) {
+        throw new Error("Não foi possível identificar o usuário Google autenticado.");
+    }
+
+    return String(data.email).toLowerCase();
 }
 
 function cookieOptions() {
@@ -249,12 +269,65 @@ app.post("/api/drive/upload-file", async (req, res) => {
     }
 });
 
+app.get("/api/data/load", async (req, res) => {
+    const refreshToken = req.cookies.google_refresh_token;
+    if (!refreshToken) {
+        return res.status(401).json({ error: "Not connected" });
+    }
+
+    try {
+        const userEmail = await getAuthenticatedUserEmail(refreshToken);
+        const docRef = db.collection("promptmetalUsers").doc(userEmail);
+        const snapshot = await docRef.get();
+
+        if (!snapshot.exists) {
+            return res.json({ success: true, data: null });
+        }
+
+        const payload = snapshot.data();
+        res.json({ success: true, data: payload?.data || null });
+    } catch (error) {
+        console.error("Cloud load error:", error);
+        res.status(500).json({ error: "Erro ao carregar dados da nuvem" });
+    }
+});
+
+app.post("/api/data/save", async (req, res) => {
+    const refreshToken = req.cookies.google_refresh_token;
+    if (!refreshToken) {
+        return res.status(401).json({ error: "Not connected" });
+    }
+
+    try {
+        const userEmail = await getAuthenticatedUserEmail(refreshToken);
+        const { data } = req.body;
+
+        if (!data) {
+            return res.status(400).json({ error: "Payload de dados ausente" });
+        }
+
+        await db.collection("promptmetalUsers").doc(userEmail).set(
+            {
+                data,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+        );
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Cloud save error:", error);
+        res.status(500).json({ error: "Erro ao salvar dados na nuvem" });
+    }
+});
+
 exports.api = onRequest(
     {
         region: "us-central1",
         invoker: "public",
         memory: "512MiB",
         timeoutSeconds: 120,
+        secrets: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
     },
     app
 );

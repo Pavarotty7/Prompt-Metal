@@ -2,22 +2,23 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { Transaction, Project, UserRole } from '../types';
-import { 
-  ArrowUpCircle, 
-  ArrowDownCircle, 
-  Filter, 
-  FileText, 
-  Plus, 
-  X, 
-  Save, 
-  DollarSign, 
-  PieChart as PieIcon, 
-  Table as TableIcon, 
-  TrendingUp, 
-  Edit, 
-  Trash2, 
-  AlertTriangle, 
-  CheckSquare, 
+import { fileEncodingService } from '../services/fileEncodingService';
+import {
+  ArrowUpCircle,
+  ArrowDownCircle,
+  Filter,
+  FileText,
+  Plus,
+  X,
+  Save,
+  DollarSign,
+  PieChart as PieIcon,
+  Table as TableIcon,
+  TrendingUp,
+  Edit,
+  Trash2,
+  AlertTriangle,
+  CheckSquare,
   Square,
   UploadCloud,
   Paperclip,
@@ -37,9 +38,9 @@ interface FinanceViewProps {
   onDeleteTransaction?: (id: string) => void;
 }
 
-const FinanceView: React.FC<FinanceViewProps> = ({ 
-  transactions, 
-  projects = [], 
+const FinanceView: React.FC<FinanceViewProps> = ({
+  transactions,
+  projects = [],
   userRole,
   onAddTransaction,
   onUpdateTransaction,
@@ -48,7 +49,7 @@ const FinanceView: React.FC<FinanceViewProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'cashflow'>('overview');
   const [filter, setFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
@@ -56,7 +57,7 @@ const FinanceView: React.FC<FinanceViewProps> = ({
 
   const [formData, setFormData] = useState({
     description: '',
-    category: 'Receita', 
+    category: 'Receita',
     projectId: '',
     type: 'income' as 'income' | 'expense',
     dueDate: '',
@@ -72,7 +73,7 @@ const FinanceView: React.FC<FinanceViewProps> = ({
     const now = new Date();
     const month = now.getMonth() + 1;
     const year = now.getFullYear();
-    
+
     // Filter transactions for current month if needed, or just export filtered list
     // The user asked for "extrato mensal", so let's filter by current month by default
     const currentMonthTransactions = transactions.filter(t => {
@@ -94,10 +95,10 @@ const FinanceView: React.FC<FinanceViewProps> = ({
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Extrato Mensal");
-    
+
     // Auto-size columns
     const max_width = dataToExport.reduce((w, r) => Math.max(w, r.Descrição.length), 10);
-    worksheet["!cols"] = [ { wch: 12 }, { wch: max_width }, { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 30 } ];
+    worksheet["!cols"] = [{ wch: 12 }, { wch: max_width }, { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 30 }];
 
     XLSX.writeFile(workbook, `Extrato_Mensal_${month}_${year}.xlsx`);
   }, [transactions, projects]);
@@ -146,13 +147,13 @@ const FinanceView: React.FC<FinanceViewProps> = ({
     }
   }, [transactionToDelete, onDeleteTransaction]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) return;
-    
+
     const attachmentInfo = attachmentFile ? {
-        attachmentName: attachmentFile.name,
-        attachmentUrl: URL.createObjectURL(attachmentFile)
+      attachmentName: attachmentFile.name,
+      attachmentUrl: await fileEncodingService.fileToDataUrl(attachmentFile)
     } : {};
 
     if (editingTransactionId && onUpdateTransaction) {
@@ -167,9 +168,9 @@ const FinanceView: React.FC<FinanceViewProps> = ({
         status: formData.status,
         projectId: formData.projectId || undefined,
         notes: formData.notes,
-        ...(attachmentFile ? attachmentInfo : { 
-            attachmentName: existing?.attachmentName, 
-            attachmentUrl: existing?.attachmentUrl 
+        ...(attachmentFile ? attachmentInfo : {
+          attachmentName: existing?.attachmentName,
+          attachmentUrl: existing?.attachmentUrl
         })
       };
       onUpdateTransaction(updatedTransaction);
@@ -196,8 +197,8 @@ const FinanceView: React.FC<FinanceViewProps> = ({
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       const matchesType = filter === 'all' || t.type === filter;
-      const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           t.category.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.category.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesType && matchesSearch;
     });
   }, [transactions, filter, searchTerm]);
@@ -217,14 +218,14 @@ const FinanceView: React.FC<FinanceViewProps> = ({
             <p className="text-slate-600 font-medium italic">Gestão centralizada de fluxo de caixa e comprovantes</p>
           </div>
           <div className="flex gap-2">
-            <button 
+            <button
               onClick={handleExportExcel}
               className="flex items-center gap-2 bg-white text-slate-900 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-50 shadow-sm border border-slate-300 transition-all"
             >
               <FileText size={20} className="text-blue-600" /> Exportar Excel
             </button>
             {isAdmin && (
-              <button 
+              <button
                 onClick={handleOpenNew}
                 className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-black shadow-2xl active:scale-95 transition-all border-2 border-emerald-500/50"
               >
@@ -238,21 +239,19 @@ const FinanceView: React.FC<FinanceViewProps> = ({
           <div className="flex gap-6 -mb-px">
             <button
               onClick={() => setActiveTab('overview')}
-              className={`pb-4 text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
-                activeTab === 'overview' 
-                  ? 'border-b-4 border-emerald-600 text-emerald-900' 
+              className={`pb-4 text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all ${activeTab === 'overview'
+                  ? 'border-b-4 border-emerald-600 text-emerald-900'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               <PieIcon size={18} /> Visão Geral & Contas
             </button>
             <button
               onClick={() => setActiveTab('cashflow')}
-              className={`pb-4 text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
-                activeTab === 'cashflow' 
-                  ? 'border-b-4 border-blue-600 text-blue-900' 
+              className={`pb-4 text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all ${activeTab === 'cashflow'
+                  ? 'border-b-4 border-blue-600 text-blue-900'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               <TrendingUp size={18} /> Fluxo de Caixa
             </button>
@@ -275,19 +274,19 @@ const FinanceView: React.FC<FinanceViewProps> = ({
                 {(filter === 'all' || filter === 'income') && (
                   <div className="flex justify-between items-center p-4 bg-emerald-100 border border-emerald-300 rounded-2xl">
                     <div className="flex items-center gap-3"><ArrowUpCircle className="text-emerald-800" size={24} /><span className="text-emerald-950 font-black text-xs uppercase tracking-widest">Receitas</span></div>
-                    <span className="text-emerald-900 font-black text-lg">€ {stats.income.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</span>
+                    <span className="text-emerald-900 font-black text-lg">€ {stats.income.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}</span>
                   </div>
                 )}
                 {(filter === 'all' || filter === 'expense') && (
                   <div className="flex justify-between items-center p-4 bg-red-100 border border-red-300 rounded-2xl">
                     <div className="flex items-center gap-3"><ArrowDownCircle className="text-red-800" size={24} /><span className="text-red-950 font-black text-xs uppercase tracking-widest">Despesas</span></div>
-                    <span className="text-red-900 font-black text-lg">€ {stats.expense.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</span>
+                    <span className="text-red-900 font-black text-lg">€ {stats.expense.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}</span>
                   </div>
                 )}
                 <div className="pt-6 border-t border-slate-200 flex justify-between items-center px-2">
                   <span className="text-slate-900 font-black text-[10px] uppercase tracking-widest">Saldo Líquido</span>
                   <span className={`font-black text-2xl ${stats.balance >= 0 ? 'text-blue-800' : 'text-red-800'}`}>
-                    € {stats.balance.toLocaleString('pt-PT', {minimumFractionDigits: 2})}
+                    € {stats.balance.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
@@ -299,10 +298,10 @@ const FinanceView: React.FC<FinanceViewProps> = ({
               <h3 className="font-black text-slate-900 uppercase tracking-tighter text-lg">Listagem Analítica</h3>
               <div className="relative w-64">
                 <Search size={14} className="absolute left-3 top-2.5 text-slate-900" />
-                <input 
-                  type="text" 
-                  placeholder="Filtrar por descrição..." 
-                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-slate-900 placeholder:text-slate-500" 
+                <input
+                  type="text"
+                  placeholder="Filtrar por descrição..."
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-slate-900 placeholder:text-slate-500"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -325,18 +324,18 @@ const FinanceView: React.FC<FinanceViewProps> = ({
                     <tr key={t.id} className="hover:bg-slate-50 transition-colors group">
                       <td className="py-5 px-6"><p className="text-xs font-black text-slate-900">{t.date ? new Date(t.date).toLocaleDateString('pt-PT') : 'N/A'}</p></td>
                       <td className="py-5 px-6">
-                          <div className="flex items-center gap-2"><p className="text-sm font-black text-slate-950 uppercase tracking-tight leading-none mb-1">{t.description}</p>{t.notes && (<div className="group relative inline-block"><MessageSquare size={14} className="text-indigo-700 cursor-help" /><div className="absolute bottom-full left-0 mb-3 w-56 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all z-50 shadow-2xl border border-white/10"><p className="font-black text-indigo-400 uppercase mb-1">Notas:</p>{t.notes}</div></div>)}</div>
-                          <div className="flex items-center gap-2"><span className="text-[9px] font-black text-slate-900 bg-slate-200 px-1.5 py-0.5 rounded uppercase border border-slate-300">{t.category}</span><span className="text-[9px] text-slate-800 font-bold uppercase truncate max-w-[150px]">{projects.find(p=>p.id === t.projectId)?.name || 'Geral'}</span></div>
+                        <div className="flex items-center gap-2"><p className="text-sm font-black text-slate-950 uppercase tracking-tight leading-none mb-1">{t.description}</p>{t.notes && (<div className="group relative inline-block"><MessageSquare size={14} className="text-indigo-700 cursor-help" /><div className="absolute bottom-full left-0 mb-3 w-56 p-3 bg-slate-900 text-white text-[10px] rounded-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-all z-50 shadow-2xl border border-white/10"><p className="font-black text-indigo-400 uppercase mb-1">Notas:</p>{t.notes}</div></div>)}</div>
+                        <div className="flex items-center gap-2"><span className="text-[9px] font-black text-slate-900 bg-slate-200 px-1.5 py-0.5 rounded uppercase border border-slate-300">{t.category}</span><span className="text-[9px] text-slate-800 font-bold uppercase truncate max-w-[150px]">{projects.find(p => p.id === t.projectId)?.name || 'Geral'}</span></div>
                       </td>
                       <td className="py-5 px-6 text-center"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${t.status === 'Pago' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : 'bg-amber-100 text-amber-900 border-amber-300'}`}>{t.status}</span></td>
-                      <td className={`py-5 px-6 text-sm font-black text-right ${t.type === 'income' ? 'text-emerald-800' : 'text-red-800'}`}>{t.type === 'income' ? '+' : '-'} {t.amount.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</td>
+                      <td className={`py-5 px-6 text-sm font-black text-right ${t.type === 'income' ? 'text-emerald-800' : 'text-red-800'}`}>{t.type === 'income' ? '+' : '-'} {t.amount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}</td>
                       <td className="py-5 px-6 text-center">{t.attachmentUrl ? <button onClick={() => setViewingAttachment(t.attachmentUrl!)} className="p-2 bg-blue-100 text-blue-900 border border-blue-300 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm"><Paperclip size={16} /></button> : <span className="text-slate-400">—</span>}</td>
                       {isAdmin && (
                         <td className="py-5 px-6 text-center">
-                            <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleEdit(t)} className="p-2 text-slate-800 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-all border border-transparent hover:border-blue-300"><Edit size={16} /></button>
-                                <button onClick={() => setTransactionToDelete(t.id)} className="p-2 text-slate-800 hover:text-red-800 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-300"><Trash2 size={16} /></button>
-                            </div>
+                          <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => handleEdit(t)} className="p-2 text-slate-800 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-all border border-transparent hover:border-blue-300"><Edit size={16} /></button>
+                            <button onClick={() => setTransactionToDelete(t.id)} className="p-2 text-slate-800 hover:text-red-800 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-300"><Trash2 size={16} /></button>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -360,61 +359,61 @@ const FinanceView: React.FC<FinanceViewProps> = ({
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-300 animate-scale-in flex flex-col max-h-[90vh]">
             <div className="bg-slate-900 p-8 flex justify-between items-center text-white shrink-0">
-               <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
-                  <DollarSign size={24} className="text-emerald-500" /> {editingTransactionId ? 'Editar Lançamento' : 'Novo Lançamento Financeiro'}
-               </h3>
-               <button onClick={() => setIsFormOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
+              <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
+                <DollarSign size={24} className="text-emerald-500" /> {editingTransactionId ? 'Editar Lançamento' : 'Novo Lançamento Financeiro'}
+              </h3>
+              <button onClick={() => setIsFormOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
             </div>
-            
+
             <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="col-span-1">
-                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Tipo de Lançamento</label>
-                   <div className="flex bg-slate-200 p-1.5 rounded-2xl gap-1 border border-slate-300">
-                      <button 
-                        type="button" 
-                        onClick={() => setFormData({...formData, type: 'income', category: 'Receita'})} 
-                        className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.type === 'income' ? 'bg-emerald-700 text-white shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
-                      >
-                        Entrada
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={() => setFormData({...formData, type: 'expense', category: 'Material'})} 
-                        className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.type === 'expense' ? 'bg-red-700 text-white shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
-                      >
-                        Saída
-                      </button>
-                   </div>
+                  <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Tipo de Lançamento</label>
+                  <div className="flex bg-slate-200 p-1.5 rounded-2xl gap-1 border border-slate-300">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, type: 'income', category: 'Receita' })}
+                      className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.type === 'income' ? 'bg-emerald-700 text-white shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
+                    >
+                      Entrada
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, type: 'expense', category: 'Material' })}
+                      className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.type === 'expense' ? 'bg-red-700 text-white shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
+                    >
+                      Saída
+                    </button>
+                  </div>
                 </div>
 
                 <div className="col-span-1">
-                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Status do Pagamento</label>
-                   <div className="flex bg-slate-200 p-1.5 rounded-2xl gap-1 border border-slate-300">
-                      <button 
-                        type="button" 
-                        onClick={() => setFormData({...formData, status: 'Pago'})} 
-                        className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.status === 'Pago' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
-                      >
-                        Efetuado
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={() => setFormData({...formData, status: 'Pendente'})} 
-                        className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.status === 'Pendente' ? 'bg-amber-600 text-black shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
-                      >
-                        Pendente
-                      </button>
-                   </div>
+                  <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Status do Pagamento</label>
+                  <div className="flex bg-slate-200 p-1.5 rounded-2xl gap-1 border border-slate-300">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, status: 'Pago' })}
+                      className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.status === 'Pago' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
+                    >
+                      Efetuado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, status: 'Pendente' })}
+                      className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.status === 'Pendente' ? 'bg-amber-600 text-black shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
+                    >
+                      Pendente
+                    </button>
+                  </div>
                 </div>
 
                 <div className="col-span-2">
                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Descrição detalhada</label>
-                  <input 
-                    type="text" 
-                    required 
-                    name="description" 
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-300 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900 placeholder:text-slate-400" 
+                  <input
+                    type="text"
+                    required
+                    name="description"
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-300 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900 placeholder:text-slate-400"
                     placeholder="Ex: Pagamento Fornecedor Aço / Recebimento Etapa 1"
                     value={formData.description}
                     onChange={handleInputChange}
@@ -422,41 +421,41 @@ const FinanceView: React.FC<FinanceViewProps> = ({
                 </div>
 
                 <div>
-                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Valor do Lançamento (€)</label>
-                   <div className="relative">
-                      <DollarSign size={18} className="absolute left-4 top-4 text-slate-900" />
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        required 
-                        name="amount" 
-                        className={`w-full pl-12 pr-5 py-4 bg-slate-50 border border-slate-300 rounded-2xl text-lg font-black outline-none focus:ring-2 ${formData.type === 'income' ? 'text-emerald-800 focus:ring-emerald-600' : 'text-red-800 focus:ring-red-600'}`} 
-                        placeholder="0,00"
-                        value={formData.amount}
-                        onChange={handleInputChange}
-                      />
-                   </div>
+                  <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Valor do Lançamento (€)</label>
+                  <div className="relative">
+                    <DollarSign size={18} className="absolute left-4 top-4 text-slate-900" />
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      name="amount"
+                      className={`w-full pl-12 pr-5 py-4 bg-slate-50 border border-slate-300 rounded-2xl text-lg font-black outline-none focus:ring-2 ${formData.type === 'income' ? 'text-emerald-800 focus:ring-emerald-600' : 'text-red-800 focus:ring-red-600'}`}
+                      placeholder="0,00"
+                      value={formData.amount}
+                      onChange={handleInputChange}
+                    />
+                  </div>
                 </div>
 
                 <div>
-                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Data do Lançamento</label>
-                   <div className="relative">
-                      <Calendar size={18} className="absolute left-4 top-4 text-slate-900" />
-                      <input 
-                        type="date" 
-                        required 
-                        name="dueDate" 
-                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
-                        value={formData.dueDate}
-                        onChange={handleInputChange}
-                      />
-                   </div>
+                  <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Data do Lançamento</label>
+                  <div className="relative">
+                    <Calendar size={18} className="absolute left-4 top-4 text-slate-900" />
+                    <input
+                      type="date"
+                      required
+                      name="dueDate"
+                      className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
+                      value={formData.dueDate}
+                      onChange={handleInputChange}
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Categoria</label>
-                  <select 
-                    name="category" 
+                  <select
+                    name="category"
                     className="w-full px-5 py-4 bg-slate-50 border border-slate-300 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
                     value={formData.category}
                     onChange={handleInputChange}
@@ -477,8 +476,8 @@ const FinanceView: React.FC<FinanceViewProps> = ({
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Vincular a Obra (Opcional)</label>
-                  <select 
-                    name="projectId" 
+                  <select
+                    name="projectId"
                     className="w-full px-5 py-4 bg-slate-50 border border-slate-300 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900"
                     value={formData.projectId}
                     onChange={handleInputChange}
@@ -493,9 +492,9 @@ const FinanceView: React.FC<FinanceViewProps> = ({
                 <div className="col-span-2">
                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Anexar Nota Fiscal / Recibo</label>
                   <div className="border-2 border-dashed border-slate-400 rounded-2xl p-6 bg-slate-100 relative group flex flex-col items-center justify-center transition-all hover:border-slate-900 hover:bg-slate-200">
-                    <input 
-                      type="file" 
-                      className="absolute inset-0 opacity-0 cursor-pointer" 
+                    <input
+                      type="file"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
                       onChange={e => setAttachmentFile(e.target.files?.[0] || null)}
                     />
                     <UploadCloud size={40} className="text-slate-900 mb-2 transition-all" />
@@ -508,9 +507,9 @@ const FinanceView: React.FC<FinanceViewProps> = ({
 
                 <div className="col-span-2">
                   <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Notas Adicionais</label>
-                  <textarea 
-                    name="notes" 
-                    rows={3} 
+                  <textarea
+                    name="notes"
+                    rows={3}
                     className="w-full px-5 py-4 bg-slate-50 border border-slate-300 rounded-2xl text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-slate-900 resize-none placeholder:text-slate-400"
                     placeholder="Observações internas importantes..."
                     value={formData.notes}
@@ -520,19 +519,19 @@ const FinanceView: React.FC<FinanceViewProps> = ({
               </div>
 
               <div className="pt-8 border-t border-slate-200 flex justify-end gap-3">
-                 <button 
-                   type="button" 
-                   onClick={() => setIsFormOpen(false)} 
-                   className="px-8 py-4 text-slate-700 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 rounded-2xl transition-all"
-                 >
-                   Descartar
-                 </button>
-                 <button 
-                   type="submit" 
-                   className="bg-slate-900 text-white px-12 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl hover:bg-black active:scale-95 transition-all flex items-center gap-2 border-2 border-emerald-500/50"
-                 >
-                   <Save size={18} className="text-emerald-500" /> Finalizar Lançamento
-                 </button>
+                <button
+                  type="button"
+                  onClick={() => setIsFormOpen(false)}
+                  className="px-8 py-4 text-slate-700 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 rounded-2xl transition-all"
+                >
+                  Descartar
+                </button>
+                <button
+                  type="submit"
+                  className="bg-slate-900 text-white px-12 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl hover:bg-black active:scale-95 transition-all flex items-center gap-2 border-2 border-emerald-500/50"
+                >
+                  <Save size={18} className="text-emerald-500" /> Finalizar Lançamento
+                </button>
               </div>
             </form>
           </div>
@@ -542,36 +541,36 @@ const FinanceView: React.FC<FinanceViewProps> = ({
       {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO */}
       {transactionToDelete && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-           <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in border border-red-200">
-              <div className="w-16 h-16 bg-red-100 text-red-700 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={32}/></div>
-              <h3 className="text-xl font-black text-slate-950 uppercase mb-2">Remover Registro?</h3>
-              <p className="text-slate-700 text-sm mb-8 leading-relaxed italic font-medium">Deseja excluir este lançamento permanentemente? Esta ação afetará o saldo atual.</p>
-              <div className="grid grid-cols-2 gap-4">
-                 <button onClick={() => setTransactionToDelete(null)} className="py-4 text-slate-700 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 rounded-xl">Manter</button>
-                 <button onClick={confirmDelete} className="py-4 bg-red-700 text-white font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-red-800 shadow-xl shadow-red-600/20 transition-all">Excluir</button>
-              </div>
-           </div>
+          <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full text-center shadow-2xl animate-scale-in border border-red-200">
+            <div className="w-16 h-16 bg-red-100 text-red-700 rounded-full flex items-center justify-center mx-auto mb-6"><AlertTriangle size={32} /></div>
+            <h3 className="text-xl font-black text-slate-950 uppercase mb-2">Remover Registro?</h3>
+            <p className="text-slate-700 text-sm mb-8 leading-relaxed italic font-medium">Deseja excluir este lançamento permanentemente? Esta ação afetará o saldo atual.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <button onClick={() => setTransactionToDelete(null)} className="py-4 text-slate-700 font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 rounded-xl">Manter</button>
+              <button onClick={confirmDelete} className="py-4 bg-red-700 text-white font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-red-800 shadow-xl shadow-red-600/20 transition-all">Excluir</button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* MODAL: VISUALIZAÇÃO DE ANEXO */}
       {viewingAttachment && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4" onClick={() => setViewingAttachment(null)}>
-           <div className="relative max-w-5xl max-h-[95vh] w-full bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
-              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-                <div className="flex items-center gap-4">
-                   <FileText size={24} className="text-emerald-500" />
-                   <h4 className="font-black text-sm uppercase tracking-widest">Documento Digitalizado</h4>
-                </div>
-                <button onClick={() => setViewingAttachment(null)} className="p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"><X size={28}/></button>
+          <div className="relative max-w-5xl max-h-[95vh] w-full bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
+              <div className="flex items-center gap-4">
+                <FileText size={24} className="text-emerald-500" />
+                <h4 className="font-black text-sm uppercase tracking-widest">Documento Digitalizado</h4>
               </div>
-              <div className="p-4 flex items-center justify-center min-h-[500px] bg-slate-100 overflow-auto">
-                 <img src={viewingAttachment} className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" alt="Anexo Financeiro" />
-              </div>
-              <div className="bg-white p-6 border-t border-slate-100 flex justify-end">
-                  <button onClick={() => setViewingAttachment(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar Visualização</button>
-              </div>
-           </div>
+              <button onClick={() => setViewingAttachment(null)} className="p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"><X size={28} /></button>
+            </div>
+            <div className="p-4 flex items-center justify-center min-h-[500px] bg-slate-100 overflow-auto">
+              <img src={viewingAttachment} className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" alt="Anexo Financeiro" />
+            </div>
+            <div className="bg-white p-6 border-t border-slate-100 flex justify-end">
+              <button onClick={() => setViewingAttachment(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar Visualização</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

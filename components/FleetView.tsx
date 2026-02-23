@@ -2,16 +2,17 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { Vehicle, VehicleDocument, MaintenanceRecord, UserRole } from '../types';
 import { driveService } from '../services/driveService';
-import { 
-  Truck, 
-  Wrench, 
-  Plus, 
-  X, 
-  Save, 
-  Droplets, 
-  DollarSign, 
-  FileText, 
-  UploadCloud, 
+import { fileEncodingService } from '../services/fileEncodingService';
+import {
+  Truck,
+  Wrench,
+  Plus,
+  X,
+  Save,
+  Droplets,
+  DollarSign,
+  FileText,
+  UploadCloud,
   Eye,
   Settings2,
   Gauge,
@@ -48,13 +49,13 @@ interface FleetViewProps {
 const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userRole }) => {
   const isAdmin = userRole === 'admin';
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<'info' | 'history' | 'fuel' | 'documents'>('info'); 
+  const [modalTab, setModalTab] = useState<'info' | 'history' | 'fuel' | 'documents'>('info');
   const [editingVehicle, setEditingVehicle] = useState<VehicleWithFuel | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Forms State
   const [vehicleForm, setVehicleForm] = useState<Partial<VehicleWithFuel>>({
     model: '',
@@ -75,11 +76,11 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     liters: string;
     cost: string;
     receiptFile: File | null;
-  }>({ 
-    vehicleId: '', 
-    date: new Date().toISOString().split('T')[0], 
-    km: '', 
-    liters: '', 
+  }>({
+    vehicleId: '',
+    date: new Date().toISOString().split('T')[0],
+    km: '',
+    liters: '',
     cost: '',
     receiptFile: null
   });
@@ -88,12 +89,12 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     name: '',
     file: null as File | null
   });
-  
+
   // Histórico com cálculo KM/L
   const combinedHistory = useMemo(() => {
     if (!editingVehicle) return [];
     const sortedFuel = [...(editingVehicle.fuelHistory || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
+
     const fuelWithEff = sortedFuel.map((entry, idx) => {
       let efficiency = null;
       if (idx > 0) {
@@ -111,21 +112,21 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     setModalTab('fuel');
     if (vehicle) {
       setEditingVehicle(vehicle);
-      setFuelForm({ 
-        vehicleId: vehicle.id, 
-        date: new Date().toISOString().split('T')[0], 
-        km: vehicle.currentKms.toString(), 
-        liters: '', 
+      setFuelForm({
+        vehicleId: vehicle.id,
+        date: new Date().toISOString().split('T')[0],
+        km: vehicle.currentKms.toString(),
+        liters: '',
         cost: '',
-        receiptFile: null 
+        receiptFile: null
       });
     } else {
       setEditingVehicle(null);
-      setFuelForm({ 
-        vehicleId: '', 
-        date: new Date().toISOString().split('T')[0], 
-        km: '', 
-        liters: '', 
+      setFuelForm({
+        vehicleId: '',
+        date: new Date().toISOString().split('T')[0],
+        km: '',
+        liters: '',
         cost: '',
         receiptFile: null
       });
@@ -177,7 +178,7 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
       documents: editingVehicle?.documents || []
     };
 
-    const updatedVehicles = editingVehicle 
+    const updatedVehicles = editingVehicle
       ? vehicles.map(v => v.id === editingVehicle.id ? vehicleToSave : v)
       : [vehicleToSave, ...vehicles];
 
@@ -185,32 +186,34 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     setIsModalOpen(false);
   };
 
-  const handleAddFuel = () => {
+  const handleAddFuel = async () => {
     if (!onUpdateVehicles) return;
     const target = editingVehicle || vehicles.find(v => v.id === fuelForm.vehicleId);
     if (!target) return;
 
-    const newLog = { 
-      id: Math.random().toString(36).substr(2, 9), 
-      date: fuelForm.date, 
-      km: Number(fuelForm.km), 
-      liters: Number(fuelForm.liters), 
+    const receiptUrl = fuelForm.receiptFile ? await fileEncodingService.fileToDataUrl(fuelForm.receiptFile) : undefined;
+
+    const newLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      date: fuelForm.date,
+      km: Number(fuelForm.km),
+      liters: Number(fuelForm.liters),
       cost: Number(fuelForm.cost),
-      receiptUrl: fuelForm.receiptFile ? URL.createObjectURL(fuelForm.receiptFile) : undefined,
+      receiptUrl,
       receiptFileName: fuelForm.receiptFile?.name
     };
 
-    const updated = { 
-      ...target, 
-      fuelHistory: [newLog, ...(target.fuelHistory || [])], 
-      currentKms: Math.max(target.currentKms, Number(fuelForm.km)) 
+    const updated = {
+      ...target,
+      fuelHistory: [newLog, ...(target.fuelHistory || [])],
+      currentKms: Math.max(target.currentKms, Number(fuelForm.km))
     };
-    
+
     onUpdateVehicles(vehicles.map(v => v.id === updated.id ? updated : v));
     setIsModalOpen(false);
   };
 
-  const handleAddDocument = (e: React.FormEvent) => {
+  const handleAddDocument = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onUpdateVehicles || !editingVehicle || !docForm.file || !docForm.name) return;
 
@@ -220,12 +223,14 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
       return;
     }
 
+    const fileUrl = await fileEncodingService.fileToDataUrl(docForm.file);
+
     const newDoc: VehicleDocument = {
       id: Math.random().toString(36).substr(2, 9),
       name: docForm.name,
       type: 'Outros',
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(docForm.file),
+      url: fileUrl,
       fileName: docForm.file.name
     };
 
@@ -241,7 +246,7 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
 
   const handleDeleteDocument = (docId: string) => {
     if (!onUpdateVehicles || !editingVehicle || !isAdmin) return;
-    
+
     const updatedVehicle = {
       ...editingVehicle,
       documents: (editingVehicle.documents || []).filter(d => d.id !== docId)
@@ -287,7 +292,7 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                 </button>
               </div>
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded border inline-block mb-4">{vehicle.plate}</p>
-              
+
               <div className="space-y-2 mb-6">
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
                   <User size={14} className="text-slate-400" />
@@ -334,15 +339,15 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X /></button>
             </div>
-            
+
             <div className="p-2 bg-slate-100 flex gap-2 shrink-0">
               {(['info', 'history', 'fuel', 'documents'] as const).map(tab => (
-                <button 
-                  key={tab} 
+                <button
+                  key={tab}
                   onClick={() => {
                     if (!editingVehicle && (tab === 'history' || tab === 'documents')) return;
                     setModalTab(tab);
-                  }} 
+                  }}
                   disabled={!editingVehicle && (tab === 'history' || tab === 'documents')}
                   className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${!editingVehicle && (tab === 'history' || tab === 'documents') ? 'opacity-30 cursor-not-allowed' : ''} ${modalTab === tab ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
                 >
@@ -359,46 +364,46 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Modelo / Marca</label>
                       <div className="relative">
                         <Truck size={16} className="absolute left-4 top-4 text-slate-400" />
-                        <input required type="text" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 outline-none" value={vehicleForm.model} onChange={e => setVehicleForm({...vehicleForm, model: e.target.value})} placeholder="Ex: Mercedes Sprinter" />
+                        <input required type="text" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 outline-none" value={vehicleForm.model} onChange={e => setVehicleForm({ ...vehicleForm, model: e.target.value })} placeholder="Ex: Mercedes Sprinter" />
                       </div>
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Matrícula</label>
-                      <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 uppercase" value={vehicleForm.plate} onChange={e => setVehicleForm({...vehicleForm, plate: e.target.value})} placeholder="AA-00-BB" />
+                      <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 uppercase" value={vehicleForm.plate} onChange={e => setVehicleForm({ ...vehicleForm, plate: e.target.value })} placeholder="AA-00-BB" />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Ano de Fabrico</label>
-                      <input required type="number" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.year} onChange={e => setVehicleForm({...vehicleForm, year: Number(e.target.value)})} />
+                      <input required type="number" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.year} onChange={e => setVehicleForm({ ...vehicleForm, year: Number(e.target.value) })} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Quilometragem (KM)</label>
                       <div className="relative">
                         <Gauge size={16} className="absolute left-4 top-4 text-slate-400" />
-                        <input required type="number" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.currentKms} onChange={e => setVehicleForm({...vehicleForm, currentKms: Number(e.target.value)})} />
+                        <input required type="number" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.currentKms} onChange={e => setVehicleForm({ ...vehicleForm, currentKms: Number(e.target.value) })} />
                       </div>
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Condutor Habitual</label>
                       <div className="relative">
                         <User size={16} className="absolute left-4 top-4 text-slate-400" />
-                        <input type="text" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.driver} onChange={e => setVehicleForm({...vehicleForm, driver: e.target.value})} placeholder="Nome do Condutor" />
+                        <input type="text" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.driver} onChange={e => setVehicleForm({ ...vehicleForm, driver: e.target.value })} placeholder="Nome do Condutor" />
                       </div>
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Última Revisão</label>
-                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.lastMaintenance} onChange={e => setVehicleForm({...vehicleForm, lastMaintenance: e.target.value})} />
+                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.lastMaintenance} onChange={e => setVehicleForm({ ...vehicleForm, lastMaintenance: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Próxima Revisão</label>
-                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.nextMaintenance} onChange={e => setVehicleForm({...vehicleForm, nextMaintenance: e.target.value})} />
+                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.nextMaintenance} onChange={e => setVehicleForm({ ...vehicleForm, nextMaintenance: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Data Inspeção (IPO)</label>
-                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.annualInspectionDate} onChange={e => setVehicleForm({...vehicleForm, annualInspectionDate: e.target.value})} />
+                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.annualInspectionDate} onChange={e => setVehicleForm({ ...vehicleForm, annualInspectionDate: e.target.value })} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Status</label>
-                      <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 outline-none" value={vehicleForm.status} onChange={e => setVehicleForm({...vehicleForm, status: e.target.value as any})}>
+                      <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 outline-none" value={vehicleForm.status} onChange={e => setVehicleForm({ ...vehicleForm, status: e.target.value as any })}>
                         <option value="Operacional">Operacional</option>
                         <option value="Manutenção">Em Manutenção</option>
                       </select>
@@ -426,55 +431,55 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                     {!editingVehicle && (
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Selecionar Viatura</label>
-                        <select className="w-full p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:border-emerald-500 outline-none appearance-none" value={fuelForm.vehicleId} onChange={e => setFuelForm({...fuelForm, vehicleId: e.target.value})}>
+                        <select className="w-full p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:border-emerald-500 outline-none appearance-none" value={fuelForm.vehicleId} onChange={e => setFuelForm({ ...fuelForm, vehicleId: e.target.value })}>
                           <option value="">Escolha a Viatura...</option>
                           {vehicles.map(v => <option key={v.id} value={v.id}>{v.model} ({v.plate})</option>)}
                         </select>
                       </div>
                     )}
-                    
+
                     <div className="grid grid-cols-2 gap-6">
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Odômetro (KM)</label>
                         <div className="relative">
                           <Gauge size={18} className="absolute left-4 top-4 text-emerald-600" />
-                          <input type="number" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.km} onChange={e => setFuelForm({...fuelForm, km: e.target.value})} placeholder="0" />
+                          <input type="number" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.km} onChange={e => setFuelForm({ ...fuelForm, km: e.target.value })} placeholder="0" />
                         </div>
                       </div>
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Volume (Litros)</label>
                         <div className="relative">
                           <Droplets size={18} className="absolute left-4 top-4 text-emerald-600" />
-                          <input type="number" step="0.01" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.liters} onChange={e => setFuelForm({...fuelForm, liters: e.target.value})} placeholder="0.00" />
+                          <input type="number" step="0.01" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.liters} onChange={e => setFuelForm({ ...fuelForm, liters: e.target.value })} placeholder="0.00" />
                         </div>
                       </div>
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Custo Total (€)</label>
                         <div className="relative">
                           <DollarSign size={18} className="absolute left-4 top-4 text-emerald-600" />
-                          <input type="number" step="0.01" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-emerald-900 focus:border-emerald-500 outline-none" value={fuelForm.cost} onChange={e => setFuelForm({...fuelForm, cost: e.target.value})} placeholder="0.00" />
+                          <input type="number" step="0.01" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-emerald-900 focus:border-emerald-500 outline-none" value={fuelForm.cost} onChange={e => setFuelForm({ ...fuelForm, cost: e.target.value })} placeholder="0.00" />
                         </div>
                       </div>
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Data do Recibo</label>
                         <div className="relative">
                           <Calendar size={18} className="absolute left-4 top-4 text-emerald-600 pointer-events-none" />
-                          <input type="date" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.date} onChange={e => setFuelForm({...fuelForm, date: e.target.value})} />
+                          <input type="date" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.date} onChange={e => setFuelForm({ ...fuelForm, date: e.target.value })} />
                         </div>
                       </div>
                     </div>
 
                     <div className="animate-fade-in">
                       <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Anexar Fatura / Recibo</label>
-                      <div 
+                      <div
                         className="border-2 border-dashed border-slate-300 rounded-[2rem] p-8 bg-slate-50 relative group flex flex-col items-center justify-center transition-all hover:border-emerald-500 hover:bg-emerald-50/30"
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        <input 
-                          type="file" 
+                        <input
+                          type="file"
                           ref={fileInputRef}
-                          className="hidden" 
-                          onChange={e => setFuelForm({...fuelForm, receiptFile: e.target.files?.[0] || null})}
+                          className="hidden"
+                          onChange={e => setFuelForm({ ...fuelForm, receiptFile: e.target.files?.[0] || null })}
                         />
                         <UploadCloud size={40} className="text-slate-400 group-hover:text-emerald-600 mb-2 transition-all" />
                         <p className="text-[11px] font-black text-slate-600 uppercase tracking-widest group-hover:text-emerald-700">
@@ -484,10 +489,10 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="pt-6 border-t border-slate-100">
-                    <button 
-                      onClick={handleAddFuel} 
+                    <button
+                      onClick={handleAddFuel}
                       disabled={!fuelForm.km || !fuelForm.liters || !fuelForm.cost || (!editingVehicle && !fuelForm.vehicleId)}
                       className="w-full py-6 bg-emerald-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] shadow-2xl hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                     >
@@ -530,10 +535,10 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="text-right">
-                            <p className={`text-lg font-black ${log.type === 'fuel' ? 'text-emerald-700' : 'text-blue-700'}`}>€ {log.cost.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
+                            <p className={`text-lg font-black ${log.type === 'fuel' ? 'text-emerald-700' : 'text-blue-700'}`}>€ {log.cost.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}</p>
                           </div>
                           {log.receiptUrl && (
-                            <button 
+                            <button
                               onClick={() => setViewingReceipt(log.receiptUrl)}
                               className="p-3 bg-white border border-slate-200 rounded-xl text-slate-900 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
                             >
@@ -567,34 +572,34 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Nome do Documento</label>
-                          <input 
-                            required 
-                            type="text" 
-                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-600" 
+                          <input
+                            required
+                            type="text"
+                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-600"
                             placeholder="Ex: Carta de Condução, Seguro 2024"
                             value={docForm.name}
-                            onChange={e => setDocForm({...docForm, name: e.target.value})}
+                            onChange={e => setDocForm({ ...docForm, name: e.target.value })}
                           />
                         </div>
                         <div>
                           <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Anexo (Foto/PDF)</label>
-                          <div 
+                          <div
                             className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-500 cursor-pointer flex items-center justify-between"
                             onClick={() => docFileInputRef.current?.click()}
                           >
                             <span className="truncate">{docForm.file ? docForm.file.name : 'Selecionar Arquivo'}</span>
                             <UploadCloud size={16} />
-                            <input 
-                              type="file" 
+                            <input
+                              type="file"
                               ref={docFileInputRef}
-                              className="hidden" 
-                              onChange={e => setDocForm({...docForm, file: e.target.files?.[0] || null})}
+                              className="hidden"
+                              onChange={e => setDocForm({ ...docForm, file: e.target.files?.[0] || null })}
                             />
                           </div>
                         </div>
                       </div>
-                      <button 
-                        type="submit" 
+                      <button
+                        type="submit"
                         disabled={!docForm.name || !docForm.file}
                         className="w-full py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
@@ -614,14 +619,14 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <button 
+                          <button
                             onClick={() => setViewingReceipt(doc.url || '')}
                             className="p-2 text-slate-400 hover:text-blue-600 transition-all"
                           >
                             <Eye size={16} />
                           </button>
                           {isAdmin && (
-                            <button 
+                            <button
                               onClick={() => handleDeleteDocument(doc.id)}
                               className="p-2 text-slate-400 hover:text-red-600 transition-all"
                             >
@@ -638,7 +643,7 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                       </div>
                     )}
                   </div>
-                  
+
                   {editingVehicle.documents && editingVehicle.documents.length >= 10 && (
                     <p className="text-center text-[10px] font-black text-amber-600 uppercase tracking-widest animate-pulse">
                       Limite de 10 documentos atingido
@@ -654,21 +659,21 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
       {/* MODAL: VISUALIZAÇÃO DE COMPROVANTE */}
       {viewingReceipt && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4" onClick={() => setViewingReceipt(null)}>
-           <div className="relative max-w-5xl max-h-[95vh] w-full bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
-              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-                <div className="flex items-center gap-4">
-                   <FileText size={24} className="text-emerald-500" />
-                   <h4 className="font-black text-sm uppercase tracking-widest">Visualização de Documento</h4>
-                </div>
-                <button onClick={() => setViewingReceipt(null)} className="p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"><X size={28}/></button>
+          <div className="relative max-w-5xl max-h-[95vh] w-full bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
+              <div className="flex items-center gap-4">
+                <FileText size={24} className="text-emerald-500" />
+                <h4 className="font-black text-sm uppercase tracking-widest">Visualização de Documento</h4>
               </div>
-              <div className="p-4 flex items-center justify-center min-h-[500px] bg-slate-100 overflow-auto">
-                 <img src={viewingReceipt} className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" alt="Documento" />
-              </div>
-              <div className="bg-white p-6 border-t border-slate-100 flex justify-end">
-                  <button onClick={() => setViewingReceipt(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar</button>
-              </div>
-           </div>
+              <button onClick={() => setViewingReceipt(null)} className="p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"><X size={28} /></button>
+            </div>
+            <div className="p-4 flex items-center justify-center min-h-[500px] bg-slate-100 overflow-auto">
+              <img src={viewingReceipt} className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" alt="Documento" />
+            </div>
+            <div className="bg-white p-6 border-t border-slate-100 flex justify-end">
+              <button onClick={() => setViewingReceipt(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

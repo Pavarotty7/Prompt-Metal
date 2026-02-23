@@ -2,12 +2,25 @@
 export const driveService = {
   uploadFile: async (file: File): Promise<{ url: string; id: string } | null> => {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      const content = await file.arrayBuffer();
+      const bytes = new Uint8Array(content);
+      let binary = '';
+      for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+      }
+      const base64 = btoa(binary);
 
-      const response = await fetch('/api/drive/upload', {
+      const response = await fetch('/api/drive/upload-file', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          content: base64,
+          folderName: 'PromptMetal Documents',
+        }),
       });
 
       if (!response.ok) {
@@ -19,7 +32,7 @@ export const driveService = {
       }
 
       const data = await response.json();
-      return { url: data.url, id: data.id };
+      return { url: data.url, id: data.fileId };
     } catch (error) {
       console.error('Error uploading to Drive:', error);
       return null;

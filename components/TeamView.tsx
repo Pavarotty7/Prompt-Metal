@@ -77,7 +77,25 @@ const INITIAL_CEOS: CEO[] = [
   { id: 'ceo2', name: "Sócio Fundador 02", role: "Diretor de Operações (COO)", description: "Gestão da eficiência produtiva, suprimentos estratégicos e conformidade técnica da frota." }
 ];
 
-const ROLES_LIST = ['Engenheiro Residente', 'Encarregado de Obra', 'Serralheiro de Estruturas', 'Montador Metalomecânico', 'Soldador Técnico', 'Pedreiro', 'Servente de Obra', 'Eletricista', 'Gestor de Projetos', 'Assistente Administrativo', 'Analista de RH'];
+const ROLES_LIST = [
+  'Administrativo',
+  'RH',
+  'Contabilidade',
+  'Diretor Financeiro',
+  'Secretária',
+  'Auxiliar de Escritório',
+  'Encarregado', 
+  'Mestre de Obras', 
+  'Pedreiro', 
+  'Servente', 
+  'Pladur', 
+  'Eletricista', 
+  'Carpinteiro', 
+  'Dobrador de Ferro', 
+  'Canalizador', 
+  'Pintor', 
+  'Gruista'
+];
 
 interface TeamViewProps {
   userRole?: UserRole;
@@ -86,13 +104,16 @@ interface TeamViewProps {
   timesheetRecords?: TimesheetRecord[];
   onAddEmployee?: (employee: Employee) => void;
   onUpdateEmployee?: (employee: Employee) => void;
+  onDeleteEmployee?: (id: string) => void;
 }
 
 const TeamView: React.FC<TeamViewProps> = ({ 
   userRole, 
   employees = [], 
   projects = [],
-  onAddEmployee 
+  onAddEmployee,
+  onUpdateEmployee,
+  onDeleteEmployee
 }) => {
   const [activeTab, setActiveTab] = useState<'organogram' | 'operational'>('organogram');
   const [departments, setDepartments] = useState<Department[]>(INITIAL_DEPARTMENTS);
@@ -102,12 +123,14 @@ const TeamView: React.FC<TeamViewProps> = ({
   
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [isCeoModalOpen, setIsCeoModalOpen] = useState(false);
   const [isProfessionalModalOpen, setIsProfessionalModalOpen] = useState<{deptId: string} | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{type: 'dept' | 'pro' | 'emp', id: string, parentId?: string} | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{type: 'dept' | 'pro' | 'emp' | 'ceo', id: string, parentId?: string} | null>(null);
   
   const isAdmin = userRole === 'admin';
 
   const [empForm, setEmpForm] = useState({ 
+    id: '',
     name: '', 
     nif: '',
     role: '', 
@@ -118,6 +141,7 @@ const TeamView: React.FC<TeamViewProps> = ({
   });
   
   const [deptForm, setDeptForm] = useState({ id: '', title: '', responsible: '' });
+  const [ceoForm, setCeoForm] = useState({ id: '', name: '', role: '', description: '' });
   const [proForm, setProForm] = useState({ name: '', role: '', description: '' });
 
   const filteredEmployees = useMemo(() => employees.filter(e => 
@@ -147,21 +171,38 @@ const TeamView: React.FC<TeamViewProps> = ({
     // Destrinchar valor do select: "ID|TYPE"
     const [allocId, allocType] = empForm.allocation.split('|');
 
-    const newEmp: Employee = { 
-      id: Math.random().toString(36).substr(2, 9), 
-      name: empForm.name, 
-      nif: empForm.nif,
-      role: empForm.role || 'Colaborador', 
-      type: empForm.type, 
-      category: empForm.category, 
-      allocationId: allocId || '', 
-      allocationType: (allocType as any) || 'department',
-      baseRate: parseFloat(empForm.baseRate) || 0 
-    };
+    if (empForm.id) {
+      // Edit existing employee
+      const updatedEmp: Employee = {
+        id: empForm.id,
+        name: empForm.name,
+        nif: empForm.nif,
+        role: empForm.role || 'Colaborador',
+        type: empForm.type,
+        category: empForm.category,
+        allocationId: allocId || '',
+        allocationType: (allocType as any) || 'department',
+        baseRate: parseFloat(empForm.baseRate) || 0
+      };
+      // We need onUpdateEmployee prop
+      if (onUpdateEmployee) onUpdateEmployee(updatedEmp);
+    } else {
+      const newEmp: Employee = { 
+        id: Math.random().toString(36).substr(2, 9), 
+        name: empForm.name, 
+        nif: empForm.nif,
+        role: empForm.role || 'Colaborador', 
+        type: empForm.type, 
+        category: empForm.category, 
+        allocationId: allocId || '', 
+        allocationType: (allocType as any) || 'department',
+        baseRate: parseFloat(empForm.baseRate) || 0 
+      };
+      onAddEmployee(newEmp);
+    }
     
-    onAddEmployee(newEmp);
     setIsEmployeeModalOpen(false);
-    setEmpForm({ name: '', nif: '', role: '', type: 'CLT', category: 'Operational', allocation: '', baseRate: '' });
+    setEmpForm({ id: '', name: '', nif: '', role: '', type: 'CLT', category: 'Operational', allocation: '', baseRate: '' });
   };
 
   const getAllocationLabel = (emp: Employee) => {
@@ -190,10 +231,26 @@ const TeamView: React.FC<TeamViewProps> = ({
     setProForm({ name: '', role: '', description: '' });
   };
 
+  const handleSaveCeo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (ceoForm.id) {
+      setCeos(ceos.map(c => c.id === ceoForm.id ? { ...c, name: ceoForm.name, role: ceoForm.role, description: ceoForm.description } : c));
+    } else {
+      setCeos([...ceos, { id: 'ceo-' + Math.random().toString(36).substr(2, 5), name: ceoForm.name, role: ceoForm.role, description: ceoForm.description }]);
+    }
+    setIsCeoModalOpen(false);
+    setCeoForm({ id: '', name: '', role: '', description: '' });
+  };
+
   const handleDelete = () => {
     if (!confirmDelete) return;
     const { type, id, parentId } = confirmDelete;
     if (type === 'dept') setDepartments(departments.filter(d => d.id !== id));
+    else if (type === 'ceo') setCeos(ceos.filter(c => c.id !== id));
+    else if (type === 'emp') {
+      // We need onDeleteEmployee prop
+      if (onDeleteEmployee) onDeleteEmployee(id);
+    }
     else if (type === 'pro' && parentId) setDepartments(departments.map(d => d.id === parentId ? { ...d, professionals: d.professionals.filter(p => p.id !== id) } : d));
     setConfirmDelete(null);
   };
@@ -227,7 +284,37 @@ const TeamView: React.FC<TeamViewProps> = ({
                <div key={emp.id} className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 hover:shadow-2xl hover:border-slate-800 transition-all group relative">
                   <div className="flex justify-between items-start mb-6">
                      <div className="p-4 bg-slate-100 text-slate-950 rounded-2xl group-hover:bg-slate-900 group-hover:text-white transition-all border border-slate-200 shadow-sm"><User size={32} /></div>
-                     <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest border ${emp.type === 'CLT' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-blue-50 text-blue-800 border-blue-300'}`}>{emp.type}</span>
+                     <div className="flex flex-col items-end gap-2">
+                       <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest border ${emp.type === 'CLT' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-blue-50 text-blue-800 border-blue-300'}`}>{emp.type}</span>
+                       {isAdmin && (
+                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                           <button 
+                             onClick={() => {
+                               setEmpForm({
+                                 id: emp.id,
+                                 name: emp.name,
+                                 nif: emp.nif || '',
+                                 role: emp.role,
+                                 type: emp.type,
+                                 category: emp.category,
+                                 allocation: `${emp.allocationId}|${emp.allocationType}`,
+                                 baseRate: emp.baseRate?.toString() || ''
+                               });
+                               setIsEmployeeModalOpen(true);
+                             }}
+                             className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
+                           >
+                             <Edit2 size={14} />
+                           </button>
+                           <button 
+                             onClick={() => setConfirmDelete({ type: 'emp', id: emp.id })}
+                             className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all"
+                           >
+                             <Trash2 size={14} />
+                           </button>
+                         </div>
+                       )}
+                     </div>
                   </div>
                   <h3 className="text-lg font-black text-slate-950 uppercase tracking-tight mb-1 leading-tight">{emp.name}</h3>
                   <div className="flex items-center gap-2 mb-4">
@@ -281,17 +368,43 @@ const TeamView: React.FC<TeamViewProps> = ({
             </div>
 
             <div className="flex flex-col items-center">
-              <div className="bg-slate-900 border-4 border-amber-500 p-10 rounded-[3rem] shadow-2xl text-center relative w-full max-w-3xl group">
-                <Crown className="text-amber-500 mx-auto mb-4 animate-pulse" size={48} />
-                <h3 className="text-white text-[10px] font-black uppercase tracking-[0.4em] mb-8">Diretoria Estratégica</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="bg-slate-900 border-4 border-amber-500 p-8 rounded-[2.5rem] shadow-2xl text-center relative w-full max-w-2xl group">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="w-10"></div>
+                  <Crown className="text-amber-500 animate-pulse" size={32} />
+                  {isAdmin ? (
+                    <button 
+                      onClick={() => { setCeoForm({ id: '', name: '', role: '', description: '' }); setIsCeoModalOpen(true); }}
+                      className="p-2 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-all"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  ) : <div className="w-10"></div>}
+                </div>
+                <h3 className="text-white text-[9px] font-black uppercase tracking-[0.4em] mb-6">Diretoria Estratégica</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {ceos.map((ceo) => (
-                    <div key={ceo.id} className="bg-white/5 p-8 rounded-3xl border border-white/10 text-left transition-all hover:bg-white/10">
-                      <p className="text-white font-black uppercase text-lg tracking-tight leading-none mb-2">{ceo.name}</p>
-                      <p className="text-amber-500 text-[10px] font-black uppercase tracking-widest mb-4">{ceo.role}</p>
-                      <div className="pt-4 border-t border-white/10">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Responsabilidades:</p>
-                        <p className="text-[11px] text-slate-300 font-medium italic leading-relaxed">{ceo.description}</p>
+                    <div key={ceo.id} className="bg-white/5 p-6 rounded-2xl border border-white/10 text-left transition-all hover:bg-white/10 relative group/ceo">
+                      {isAdmin && (
+                        <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover/ceo:opacity-100 transition-all">
+                          <button 
+                            onClick={() => { setCeoForm({ id: ceo.id, name: ceo.name, role: ceo.role, description: ceo.description || '' }); setIsCeoModalOpen(true); }}
+                            className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                          <button 
+                            onClick={() => setConfirmDelete({ type: 'ceo', id: ceo.id })}
+                            className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-white font-black uppercase text-base tracking-tight leading-none mb-1">{ceo.name}</p>
+                      <p className="text-amber-500 text-[9px] font-black uppercase tracking-widest mb-3">{ceo.role}</p>
+                      <div className="pt-3 border-t border-white/10">
+                        <p className="text-[10px] text-slate-400 font-medium italic leading-relaxed line-clamp-2">{ceo.description}</p>
                       </div>
                     </div>
                   ))}
@@ -339,14 +452,66 @@ const TeamView: React.FC<TeamViewProps> = ({
                             <div className="mt-8 pt-8 border-t border-slate-200 animate-slide-in-bottom">
                               <div className="flex justify-between items-center mb-6">
                                 <h4 className="text-[9px] font-black text-slate-950 uppercase tracking-widest flex items-center gap-2"><Users size={12}/> Profissionais Alocados</h4>
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{deptEmployees.length} pessoas</span>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{deptEmployees.length} pessoas</span>
+                                  {isAdmin && (
+                                    <button 
+                                      onClick={() => {
+                                        setEmpForm({
+                                          id: '',
+                                          name: '',
+                                          nif: '',
+                                          role: '',
+                                          type: 'CLT',
+                                          category: 'Administrative',
+                                          allocation: `${dept.id}|department`,
+                                          baseRate: ''
+                                        });
+                                        setIsEmployeeModalOpen(true);
+                                      }}
+                                      className="p-1.5 bg-slate-900 text-white rounded-lg hover:bg-black transition-all flex items-center gap-1 text-[8px] font-black uppercase tracking-widest"
+                                    >
+                                      <Plus size={12} /> Adicionar
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               <div className="space-y-4">
                                 {deptEmployees.length > 0 ? deptEmployees.map(emp => (
                                   <div key={emp.id} className="p-5 bg-slate-50 rounded-2xl group/pro relative border border-slate-200 hover:border-slate-900 hover:bg-white transition-all shadow-sm">
                                     <div className="flex justify-between items-start">
                                       <div><p className="text-sm font-black text-slate-950 uppercase leading-none mb-1">{emp.name}</p><p className="text-[10px] text-amber-700 font-black uppercase tracking-widest">{emp.role}</p></div>
-                                      <div className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[8px] font-black uppercase">{emp.type}</div>
+                                      <div className="flex items-center gap-2">
+                                        <div className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[8px] font-black uppercase">{emp.type}</div>
+                                        {isAdmin && (
+                                          <div className="flex gap-1 opacity-0 group-hover/pro:opacity-100 transition-all">
+                                            <button 
+                                              onClick={() => {
+                                                setEmpForm({
+                                                  id: emp.id,
+                                                  name: emp.name,
+                                                  nif: emp.nif || '',
+                                                  role: emp.role,
+                                                  type: emp.type,
+                                                  category: emp.category,
+                                                  allocation: `${emp.allocationId}|${emp.allocationType}`,
+                                                  baseRate: emp.baseRate?.toString() || ''
+                                                });
+                                                setIsEmployeeModalOpen(true);
+                                              }}
+                                              className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-all"
+                                            >
+                                              <Edit2 size={12} />
+                                            </button>
+                                            <button 
+                                              onClick={() => setConfirmDelete({ type: 'emp', id: emp.id })}
+                                              className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all"
+                                            >
+                                              <Trash2 size={12} />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 )) : (
@@ -368,7 +533,7 @@ const TeamView: React.FC<TeamViewProps> = ({
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
            <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-white/20 animate-scale-in flex flex-col max-h-[90vh]">
               <div className="bg-slate-900 p-10 flex justify-between items-center text-white">
-                 <h3 className="text-3xl font-black uppercase tracking-tighter flex items-center gap-4"><UserPlus size={32} className="text-amber-500" /> Cadastro Operacional</h3>
+                 <h3 className="text-3xl font-black uppercase tracking-tighter flex items-center gap-4"><UserPlus size={32} className="text-amber-500" /> {empForm.id ? 'Editar Colaborador' : 'Cadastro Operacional'}</h3>
                  <button onClick={() => setIsEmployeeModalOpen(false)} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-all"><X size={28} /></button>
               </div>
               <form onSubmit={handleAddEmployeeSubmit} className="p-10 space-y-8 overflow-y-auto">
@@ -423,6 +588,38 @@ const TeamView: React.FC<TeamViewProps> = ({
                     <button type="button" onClick={() => setIsEmployeeModalOpen(false)} className="px-10 py-5 text-slate-500 font-black uppercase text-[11px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
                     <button type="submit" className="bg-slate-900 text-white px-12 py-5 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-2xl hover:bg-black active:scale-95 transition-all flex items-center gap-3 border border-amber-500/20">
                        <Save size={20} className="text-amber-500" /> Salvar Colaborador
+                    </button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR DIRETORIA */}
+      {isCeoModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border border-white/20 animate-scale-in">
+              <div className="bg-slate-900 p-8 flex justify-between items-center text-white">
+                 <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3"><Crown size={24} className="text-amber-500" /> {ceoForm.id ? 'Editar Diretor' : 'Novo Diretor'}</h3>
+                 <button onClick={() => setIsCeoModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
+              </div>
+              <form onSubmit={handleSaveCeo} className="p-8 space-y-6">
+                 <div>
+                    <label className="block text-[11px] font-black text-slate-950 uppercase mb-2 tracking-widest">Nome do Diretor</label>
+                    <input required type="text" className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-slate-900" value={ceoForm.name} onChange={e => setCeoForm({...ceoForm, name: e.target.value})} placeholder="Ex: Carlos Alberto" />
+                 </div>
+                 <div>
+                    <label className="block text-[11px] font-black text-slate-950 uppercase mb-2 tracking-widest">Cargo / Função</label>
+                    <input required type="text" className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-950 outline-none" value={ceoForm.role} onChange={e => setCeoForm({...ceoForm, role: e.target.value})} placeholder="Ex: CEO" />
+                 </div>
+                 <div>
+                    <label className="block text-[11px] font-black text-slate-950 uppercase mb-2 tracking-widest">Responsabilidades / Descrição</label>
+                    <textarea className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-950 outline-none h-32 resize-none" value={ceoForm.description} onChange={e => setCeoForm({...ceoForm, description: e.target.value})} placeholder="Descreva as responsabilidades..." />
+                 </div>
+                 <div className="pt-8 flex justify-end gap-3 border-t border-slate-100">
+                    <button type="button" onClick={() => setIsCeoModalOpen(false)} className="px-6 py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-xl transition-all">Descartar</button>
+                    <button type="submit" className="bg-slate-900 text-white px-10 py-4 rounded-xl text-sm font-black uppercase tracking-widest shadow-xl hover:bg-black active:scale-95 transition-all flex items-center gap-2">
+                       <Save size={18} className="text-amber-500" /> {ceoForm.id ? 'Atualizar' : 'Criar'}
                     </button>
                  </div>
               </form>
