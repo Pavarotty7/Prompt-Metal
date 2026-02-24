@@ -25,6 +25,29 @@ const oauth2Client = new google.auth.OAuth2(
     `${APP_URL}/auth/google/callback`
 );
 
+function getRequestAppUrl(req) {
+    const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+    const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+    const host = forwardedHost || req.get("host") || "";
+    const protocol = forwardedProto || req.protocol || (IS_HTTPS_APP ? "https" : "http");
+
+    if (!host) {
+        return APP_URL;
+    }
+
+    return `${protocol}://${host}`;
+}
+
+function createOAuthClient(req) {
+    const requestAppUrl = getRequestAppUrl(req);
+
+    return new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        `${requestAppUrl}/auth/google/callback`
+    );
+}
+
 const SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/drive.file",
@@ -111,7 +134,9 @@ function accessTokenCookieOptions(expiresAtMs) {
 app.get("/api/auth/google/url", (req, res) => {
     if (!requireOAuthEnv(res)) return;
 
-    const url = oauth2Client.generateAuthUrl({
+    const authClient = createOAuthClient(req);
+
+    const url = authClient.generateAuthUrl({
         access_type: "offline",
         scope: SCOPES,
         prompt: "consent",
@@ -129,7 +154,8 @@ app.get("/auth/google/callback", async (req, res) => {
     }
 
     try {
-        const { tokens } = await oauth2Client.getToken(code);
+        const authClient = createOAuthClient(req);
+        const { tokens } = await authClient.getToken(code);
 
         if (tokens.access_token) {
             res.cookie("google_access_token", tokens.access_token, accessTokenCookieOptions(tokens.expiry_date));
