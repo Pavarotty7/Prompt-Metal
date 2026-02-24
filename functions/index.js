@@ -111,6 +111,15 @@ function normalizeUserId(value) {
     return String(value || "").trim().toLowerCase();
 }
 
+function isHttpsRequest(req) {
+    const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+    if (forwardedProto) {
+        return forwardedProto === "https";
+    }
+
+    return Boolean(req.secure || IS_HTTPS_APP);
+}
+
 async function resolveFirestoreUserId(req) {
     const refreshToken = req.cookies.google_refresh_token;
     const accessToken = req.cookies.google_access_token;
@@ -126,17 +135,17 @@ async function resolveFirestoreUserId(req) {
     return fallbackUserId;
 }
 
-function cookieOptions() {
+function cookieOptions(req) {
     return {
         httpOnly: true,
-        secure: IS_HTTPS_APP,
-        sameSite: IS_HTTPS_APP ? "none" : "lax",
+        secure: isHttpsRequest(req),
+        sameSite: "lax",
         path: "/",
         maxAge: 30 * 24 * 60 * 60 * 1000,
     };
 }
 
-function accessTokenCookieOptions(expiresAtMs) {
+function accessTokenCookieOptions(req, expiresAtMs) {
     const now = Date.now();
     const maxAge = Number(expiresAtMs)
         ? Math.max(60 * 1000, Number(expiresAtMs) - now)
@@ -144,8 +153,8 @@ function accessTokenCookieOptions(expiresAtMs) {
 
     return {
         httpOnly: true,
-        secure: IS_HTTPS_APP,
-        sameSite: IS_HTTPS_APP ? "none" : "lax",
+        secure: isHttpsRequest(req),
+        sameSite: "lax",
         path: "/",
         maxAge,
     };
@@ -178,11 +187,11 @@ app.get("/auth/google/callback", async (req, res) => {
         const { tokens } = await authClient.getToken(code);
 
         if (tokens.access_token) {
-            res.cookie("google_access_token", tokens.access_token, accessTokenCookieOptions(tokens.expiry_date));
+            res.cookie("google_access_token", tokens.access_token, accessTokenCookieOptions(req, tokens.expiry_date));
         }
 
         if (tokens.refresh_token) {
-            res.cookie("google_refresh_token", tokens.refresh_token, cookieOptions());
+            res.cookie("google_refresh_token", tokens.refresh_token, cookieOptions(req));
         }
 
         if (!tokens.refresh_token && !tokens.access_token) {
@@ -262,16 +271,18 @@ app.get("/api/auth/google/user", async (req, res) => {
 });
 
 app.post("/api/auth/google/logout", (req, res) => {
+    const secureCookie = isHttpsRequest(req);
+
     res.clearCookie("google_refresh_token", {
         httpOnly: true,
-        secure: IS_HTTPS_APP,
-        sameSite: IS_HTTPS_APP ? "none" : "lax",
+        secure: secureCookie,
+        sameSite: "lax",
         path: "/",
     });
     res.clearCookie("google_access_token", {
         httpOnly: true,
-        secure: IS_HTTPS_APP,
-        sameSite: IS_HTTPS_APP ? "none" : "lax",
+        secure: secureCookie,
+        sameSite: "lax",
         path: "/",
     });
     res.json({ success: true });

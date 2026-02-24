@@ -19,6 +19,12 @@ app.set("trust proxy", 1);
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
+const isHttpsRequest = (req: express.Request) => {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  if (forwardedProto) return forwardedProto === 'https';
+  return Boolean(req.secure || isProduction);
+};
+
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
@@ -74,10 +80,11 @@ app.get("/auth/google/callback", async (req, res) => {
   try {
     const { tokens } = await oauth2Client.getToken(code as string);
 
+    const secureCookie = isHttpsRequest(req);
     const cookieOptions = {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'none' as const : 'lax' as const,
+      secure: secureCookie,
+      sameSite: 'lax' as const,
     };
 
     if (tokens.access_token) {
@@ -171,13 +178,15 @@ app.get("/api/auth/google/user", async (req, res) => {
 });
 
 app.post("/api/auth/google/logout", (req, res) => {
+  const secureCookie = isHttpsRequest(req);
+
   res.clearCookie('google_refresh_token', {
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax'
+    secure: secureCookie,
+    sameSite: 'lax'
   });
   res.clearCookie('google_access_token', {
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax'
+    secure: secureCookie,
+    sameSite: 'lax'
   });
   res.json({ success: true });
 });
