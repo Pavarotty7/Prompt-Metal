@@ -1,223 +1,45 @@
 
-import React, { useMemo, useState } from 'react';
-import { ShieldCheck, Mail, Eye, EyeOff, Lock, CheckCircle2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { User, Eye, EyeOff, Lock, CheckCircle2 } from 'lucide-react';
 import { UserRole } from '../types';
-import {
-  browserLocalPersistence,
-  browserSessionPersistence,
-  createUserWithEmailAndPassword,
-  signOut,
-  setPersistence,
-  signInWithEmailAndPassword,
-} from 'firebase/auth';
-import { auth, getAllowedEmails, isEmailAllowed, isFirebaseAuthConfigured } from '../services/firebase';
 
 interface RoleSelectionProps {
   onSelect: (role: UserRole, stayLoggedIn: boolean, userId: string) => void;
 }
 
 const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [stayLoggedIn, setStayLoggedIn] = useState(false);
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [error, setError] = useState(false);
 
-  const firebaseReady = useMemo(() => isFirebaseAuthConfigured(), []);
-  const allowedEmails = useMemo(() => getAllowedEmails(), []);
-
-  const roleForEmail = (_value: string): UserRole => 'admin';
-
-  const applyPersistence = async () => {
-    if (!auth) return;
-    await setPersistence(auth, stayLoggedIn ? browserLocalPersistence : browserSessionPersistence);
+  const ADMIN_USERS = {
+    'Fabio': 'fb123',
+    'Rodrigo': 'admin',
+    'Diego': 'joao1234'
   };
 
-  const handleAuthSuccess = (userEmail: string) => {
-    const normalizedEmail = userEmail.trim().toLowerCase();
-    const role = roleForEmail(normalizedEmail);
-    onSelect(role, stayLoggedIn, normalizedEmail);
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
+    const normalizedUser = username.trim().toLowerCase();
 
-    if (!firebaseReady || !auth) {
-      setErrorMessage('Autenticação em preparação. Configure as variáveis VITE_FIREBASE_* no .env e reinicie a aplicação.');
+    // Check Admin users
+    const adminPassword = ADMIN_USERS[username as keyof typeof ADMIN_USERS];
+    if (adminPassword && adminPassword === password) {
+      onSelect('admin', stayLoggedIn, normalizedUser || username);
       return;
     }
 
-    try {
-      setIsLoading(true);
-      await applyPersistence();
-
-      const normalizedEmail = email.trim().toLowerCase();
-      if (!isEmailAllowed(normalizedEmail)) {
-        setErrorMessage(`Acesso permitido apenas para: ${allowedEmails.join(', ')}`);
-        return;
-      }
-
-      const credential = isRegisterMode
-        ? await createUserWithEmailAndPassword(auth, normalizedEmail, password)
-        : await signInWithEmailAndPassword(auth, normalizedEmail, password);
-
-      const userEmail = credential.user.email || normalizedEmail;
-      handleAuthSuccess(userEmail);
-    } catch (error: any) {
-      const errorCode = String(error?.code || '');
-      if (errorCode.includes('auth/invalid-credential')) {
-        setErrorMessage('Credenciais inválidas. Verifique e-mail e senha.');
-      } else if (errorCode.includes('auth/email-already-in-use')) {
-        setErrorMessage('Este e-mail já está em uso. Faça login em vez de criar conta.');
-      } else if (errorCode.includes('auth/weak-password')) {
-        setErrorMessage('Senha fraca. Use pelo menos 6 caracteres.');
-      } else if (errorCode.includes('auth/popup-closed-by-user')) {
-        setErrorMessage('Login cancelado. Tente novamente.');
-      } else {
-        setErrorMessage('Erro ao autenticar. Verifique configuração do Firebase Auth.');
-      }
-    } finally {
-      setIsLoading(false);
+    // Check Guest
+    if (username.toLowerCase() === 'convidado' && password === '1234') {
+      onSelect('guest', stayLoggedIn, normalizedUser || 'convidado');
+      return;
     }
-  };
 
-  const handleGoogleLogin = async () => {
-    setErrorMessage('');
-
-    const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-
-    const fetchAuthenticatedUser = async () => {
-      const maxAttempts = 5;
-
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        const response = await fetch('/api/auth/google/user', { credentials: 'include' });
-        if (response.ok) return response;
-
-        const isRetryable401 = response.status === 401 && attempt < maxAttempts;
-        if (!isRetryable401) return response;
-
-        await wait(250);
-      }
-
-      return fetch('/api/auth/google/user', { credentials: 'include' });
-    };
-
-    try {
-      setIsLoading(true);
-
-      const urlResponse = await fetch('/api/auth/google/url', { credentials: 'include' });
-      if (!urlResponse.ok) {
-        setErrorMessage('Não foi possível iniciar autenticação Google.');
-        return;
-      }
-
-      const { url } = await urlResponse.json();
-      if (!url) {
-        setErrorMessage('URL de autenticação Google inválida.');
-        return;
-      }
-
-      const popup = window.open(url, 'promptmetal-google-auth', 'width=520,height=700');
-      if (!popup) {
-        setErrorMessage('O navegador bloqueou o popup. Permita popups e tente novamente.');
-        return;
-      }
-
-      const authResult = await new Promise<{ status: 'success' | 'error'; message?: string }>((resolve) => {
-        let settled = false;
-
-        const finish = (status: 'success' | 'error', message?: string) => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          resolve({ status, message });
-        };
-
-        const timeout = window.setTimeout(() => {
-          finish('error', 'Tempo limite excedido no login Google. Tente novamente.');
-        }, 120000);
-
-        const interval = window.setInterval(() => {
-          try {
-            if (popup.closed) {
-              window.setTimeout(() => {
-                finish('error', 'Janela de autenticação fechada antes da confirmação.');
-              }, 250);
-            }
-          } catch {
-            // Ignora erro de COOP enquanto a janela estiver em origem diferente (Google).
-          }
-        }, 500);
-
-        const onMessage = (event: MessageEvent) => {
-          if (event.origin !== window.location.origin) return;
-
-          const data = event.data || {};
-          if (data?.type === 'OAUTH_AUTH_SUCCESS') {
-            finish('success');
-          } else if (data?.type === 'OAUTH_AUTH_ERROR') {
-            finish('error', String(data?.message || '').trim() || 'Falha no login com Google.');
-          }
-        };
-
-        const cleanup = () => {
-          window.clearTimeout(timeout);
-          window.clearInterval(interval);
-          window.removeEventListener('message', onMessage);
-          if (!popup.closed) popup.close();
-        };
-
-        window.addEventListener('message', onMessage);
-      });
-
-      if (authResult.status !== 'success') {
-        setErrorMessage(authResult.message || 'Falha no login com Google. Tente novamente.');
-        return;
-      }
-
-      const userResponse = await fetchAuthenticatedUser();
-      if (!userResponse.ok) {
-        let backendError = '';
-        try {
-          const payload = await userResponse.json();
-          backendError = String(payload?.error || '').trim();
-        } catch {
-          backendError = '';
-        }
-
-        setErrorMessage(backendError || 'Não foi possível obter o e-mail da conta Google autenticada.');
-        return;
-      }
-
-      const userPayload = await userResponse.json();
-      const userEmail = String(userPayload?.email || '').trim().toLowerCase();
-      if (!userEmail) {
-        setErrorMessage('Não foi possível identificar o e-mail da conta Google.');
-        return;
-      }
-
-      if (!isEmailAllowed(userEmail)) {
-        await fetch('/api/auth/google/logout', { method: 'POST', credentials: 'include' });
-        setErrorMessage(`Acesso permitido apenas para: ${allowedEmails.join(', ')}`);
-        return;
-      }
-
-      if (firebaseReady && auth) {
-        await applyPersistence();
-        await signOut(auth).catch(() => undefined);
-      }
-
-      handleAuthSuccess(userEmail);
-    } catch (error: any) {
-      const fallback = 'Falha no login com Google. Verifique a configuração OAuth e tente novamente.';
-      const message = String(error?.message || '').trim();
-      setErrorMessage(message || fallback);
-    } finally {
-      setIsLoading(false);
-    }
+    // If none match
+    setError(true);
+    setTimeout(() => setError(false), 2000);
   };
 
   return (
@@ -239,25 +61,24 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
 
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2rem] p-8 shadow-2xl space-y-6">
           <h2 className="text-white text-xl font-black text-center mb-2 uppercase tracking-tight">
-            {isRegisterMode ? 'Criar Conta' : 'Acesso ao Sistema'}
+            Acesso ao Sistema
           </h2>
 
           <form onSubmit={handleLogin} className="space-y-5 animate-fade-in">
             <div className="space-y-4">
               <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">E-mail</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Usuário / Login</label>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors">
-                    <Mail size={18} />
+                    <User size={18} />
                   </div>
                   <input
                     autoFocus
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="seu@email.com"
-                    className={`w-full bg-slate-900/50 border ${errorMessage ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-4 text-white outline-none transition-all font-black tracking-widest`}
-                    required
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Seu nome de usuário"
+                    className={`w-full bg-slate-900/50 border ${error ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-4 text-white outline-none transition-all font-black tracking-widest`}
                   />
                 </div>
               </div>
@@ -272,10 +93,8 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Sua senha"
-                    className={`w-full bg-slate-900/50 border ${errorMessage ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-12 text-white outline-none transition-all font-black tracking-widest`}
-                    minLength={6}
-                    required
+                    placeholder="Sua senha secreta"
+                    className={`w-full bg-slate-900/50 border ${error ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-12 text-white outline-none transition-all font-black tracking-widest`}
                   />
                   <button
                     type="button"
@@ -285,7 +104,7 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
-                {errorMessage && <p className="text-[10px] text-red-500 font-black uppercase mt-2 pl-1 animate-pulse text-center">{errorMessage}</p>}
+                {error && <p className="text-[10px] text-red-500 font-black uppercase mt-2 pl-1 animate-pulse text-center">Credenciais inválidas. Verifique usuário e senha.</p>}
               </div>
 
               <label className="flex items-center gap-3 cursor-pointer group py-2">
@@ -306,27 +125,9 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
 
             <button
               type="submit"
-              disabled={isLoading}
               className="w-full py-5 rounded-2xl text-sm font-black uppercase tracking-[0.2em] transition-all duration-300 shadow-xl flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-500 shadow-blue-600/20 active:scale-95"
             >
-              {isLoading ? 'Autenticando...' : isRegisterMode ? 'Criar conta com e-mail' : 'Entrar com e-mail'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={isLoading}
-              className="w-full py-4 rounded-2xl text-sm font-black uppercase tracking-[0.2em] transition-all duration-300 shadow-xl flex items-center justify-center gap-2 bg-white text-slate-900 hover:bg-slate-100 active:scale-95 disabled:opacity-60"
-            >
-              Entrar com Google
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsRegisterMode(prev => !prev)}
-              className="w-full text-[10px] text-slate-400 hover:text-slate-300 font-black uppercase tracking-widest"
-            >
-              {isRegisterMode ? 'Já tem conta? Entrar' : 'Não tem conta? Criar com e-mail'}
+              Entrar no Sistema
             </button>
           </form>
         </div>
