@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { User, Eye, EyeOff, Lock, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, User, Eye, EyeOff, Lock, CheckCircle2 } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface RoleSelectionProps {
@@ -14,26 +14,25 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
   const [stayLoggedIn, setStayLoggedIn] = useState(false);
   const [error, setError] = useState(false);
 
-  const ADMIN_USERS: Record<string, string> = {
-    fabio: 'fb123',
-    rodrigo: 'admin',
-    diego: 'joao1234'
+  const ADMIN_USERS = {
+    'Fabio': 'fb123',
+    'Rodrigo': 'admin',
+    'Diego': 'joao1234'
   };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedUser = username.trim().toLowerCase();
-    const normalizedPassword = password.trim();
 
     // Check Admin users
-    const adminPassword = ADMIN_USERS[normalizedUser];
-    if (adminPassword && adminPassword === normalizedPassword) {
+    const adminPassword = ADMIN_USERS[username as keyof typeof ADMIN_USERS];
+    if (adminPassword && adminPassword === password) {
       onSelect('admin', stayLoggedIn, normalizedUser || username);
       return;
     }
 
     // Check Guest
-    if (normalizedUser === 'convidado' && normalizedPassword === '1234') {
+    if (username.toLowerCase() === 'convidado' && password === '1234') {
       onSelect('guest', stayLoggedIn, normalizedUser || 'convidado');
       return;
     }
@@ -68,48 +67,34 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
           <form onSubmit={handleLogin} className="space-y-5 animate-fade-in">
             <div className="space-y-4">
               <div className="relative">
-                <label htmlFor="login-username" className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Usuário / Login</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Usuário / Login</label>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors">
                     <User size={18} />
                   </div>
                   <input
-                    id="login-username"
-                    name="username"
                     autoFocus
                     type="text"
                     value={username}
-                    onChange={(e) => {
-                      setUsername(e.target.value);
-                      if (error) setError(false);
-                    }}
+                    onChange={(e) => setUsername(e.target.value)}
                     placeholder="Seu nome de usuário"
-                    autoComplete="username"
                     className={`w-full bg-slate-900/50 border ${error ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-4 text-white outline-none transition-all font-black tracking-widest`}
-                    required
                   />
                 </div>
               </div>
 
               <div className="relative">
-                <label htmlFor="login-password" className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Senha de Acesso</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Senha de Acesso</label>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors">
                     <Lock size={18} />
                   </div>
                   <input
-                    id="login-password"
-                    name="password"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (error) setError(false);
-                    }}
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="Sua senha secreta"
-                    autoComplete="current-password"
                     className={`w-full bg-slate-900/50 border ${error ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-12 text-white outline-none transition-all font-black tracking-widest`}
-                    required
                   />
                   <button
                     type="button"
@@ -125,8 +110,6 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
               <label className="flex items-center gap-3 cursor-pointer group py-2">
                 <div className="relative">
                   <input
-                    id="login-stay-logged"
-                    name="stayLoggedIn"
                     type="checkbox"
                     className="peer sr-only"
                     checked={stayLoggedIn}
