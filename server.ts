@@ -26,6 +26,9 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 const SCOPES = [
+  'openid',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.metadata.readonly'
 ];
@@ -51,12 +54,27 @@ app.get("/auth/google/callback", async (req, res) => {
   try {
     const { tokens } = await oauth2Client.getToken(code as string);
 
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' as const : 'lax' as const,
+    };
+
+    if (tokens.access_token) {
+      const expiresInMs = Number(tokens.expiry_date)
+        ? Math.max(60_000, Number(tokens.expiry_date) - Date.now())
+        : 60 * 60 * 1000;
+
+      res.cookie('google_access_token', tokens.access_token, {
+        ...cookieOptions,
+        maxAge: expiresInMs,
+      });
+    }
+
     // Store refresh token in a secure cookie
     if (tokens.refresh_token) {
       res.cookie('google_refresh_token', tokens.refresh_token, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',
+        ...cookieOptions,
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
     }
@@ -78,18 +96,66 @@ app.get("/auth/google/callback", async (req, res) => {
     `);
   } catch (error) {
     console.error("Error exchanging code for tokens:", error);
-    res.status(500).send("Erro na autenticação.");
+    res.status(500).send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', message: 'Erro na autenticação com Google.' }, '*');
+              window.close();
+            } else {
+              window.location.href = '/';
+            }
+          </script>
+          <p>Falha na autenticação. Feche esta janela e tente novamente.</p>
+        </body>
+      </html>
+    `);
   }
 });
 
 app.get("/api/auth/google/status", (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  const connected = !!refreshToken;
+  const accessToken = req.cookies.google_access_token;
+  const connected = !!(refreshToken || accessToken);
   res.json({ connected, isAuthenticated: connected });
+});
+
+app.get("/api/auth/google/user", async (req, res) => {
+  const refreshToken = req.cookies.google_refresh_token;
+  const accessToken = req.cookies.google_access_token;
+
+  if (!refreshToken && !accessToken) {
+    return res.status(401).json({ error: "Sessão Google não encontrada" });
+  }
+
+  try {
+    oauth2Client.setCredentials(
+      refreshToken
+        ? { refresh_token: refreshToken }
+        : { access_token: accessToken }
+    );
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const { data } = await oauth2.userinfo.get();
+
+    const email = String(data?.email || '').trim().toLowerCase();
+    if (!email) {
+      return res.status(404).json({ error: "E-mail da conta Google não disponível" });
+    }
+
+    res.json({ email, name: data?.name || null, picture: data?.picture || null });
+  } catch (error) {
+    console.error("Erro ao obter dados do usuário Google:", error);
+    res.status(500).json({ error: "Não foi possível obter dados do usuário Google" });
+  }
 });
 
 app.post("/api/auth/google/logout", (req, res) => {
   res.clearCookie('google_refresh_token', {
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax'
+  });
+  res.clearCookie('google_access_token', {
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax'
   });

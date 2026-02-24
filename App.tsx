@@ -17,6 +17,7 @@ import NotesView from './components/NotesView';
 import SettingsView from './components/SettingsView';
 import { ViewState, Transaction, Project, Employee, UserRole, Vehicle, TimesheetRecord, ScheduleTask, DailyNote } from './types';
 import { databaseService } from './services/databaseService';
+import { auth, isEmailAllowed } from './services/firebase';
 
 type CloudSyncStatus = 'idle' | 'saving' | 'saved' | 'error' | 'offline';
 
@@ -50,6 +51,50 @@ const App: React.FC = () => {
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('idle');
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<Date | null>(null);
   const isApplyingCloudData = useRef(false);
+
+  const clearLocalSessionState = useCallback(() => {
+    setUserRole(null);
+    setCurrentView('home');
+    setSelectedProjectId(null);
+    setCloudUserId(null);
+    setIsCloudConnected(false);
+    setCloudDataLoaded(false);
+    setCloudSyncStatus('offline');
+    localStorage.removeItem(APP_STORAGE_KEYS.ROLE);
+    localStorage.removeItem(APP_STORAGE_KEYS.USER_ID);
+    sessionStorage.removeItem(APP_STORAGE_KEYS.SESSION_ROLE);
+    sessionStorage.removeItem(APP_STORAGE_KEYS.SESSION_USER_ID);
+    localStorage.removeItem(APP_STORAGE_KEYS.CURRENT_VIEW);
+    localStorage.removeItem(APP_STORAGE_KEYS.SELECTED_PROJECT_ID);
+  }, []);
+
+  useEffect(() => {
+    if (!auth) return;
+
+    const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
+      if (!firebaseUser?.email) return;
+
+      if (!isEmailAllowed(firebaseUser.email)) {
+        auth.signOut().catch((error) => {
+          console.error('Erro ao encerrar sessão Firebase Auth não autorizada:', error);
+        });
+        clearLocalSessionState();
+        return;
+      }
+
+      const normalizedEmail = firebaseUser.email.trim().toLowerCase();
+      setCloudUserId(normalizedEmail);
+      setIsCloudConnected(true);
+
+      if (!localStorage.getItem(APP_STORAGE_KEYS.ROLE) && !sessionStorage.getItem(APP_STORAGE_KEYS.SESSION_ROLE)) {
+        setUserRole('admin');
+        sessionStorage.setItem(APP_STORAGE_KEYS.SESSION_ROLE, 'admin');
+        sessionStorage.setItem(APP_STORAGE_KEYS.SESSION_USER_ID, normalizedEmail);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [clearLocalSessionState]);
 
   const applyDataToState = useCallback((data: any) => {
     if (!data) return;
@@ -107,6 +152,14 @@ const App: React.FC = () => {
     const initializeData = async () => {
       const savedRole = (localStorage.getItem(APP_STORAGE_KEYS.ROLE) || sessionStorage.getItem(APP_STORAGE_KEYS.SESSION_ROLE)) as UserRole;
       const savedUserId = (localStorage.getItem(APP_STORAGE_KEYS.USER_ID) || sessionStorage.getItem(APP_STORAGE_KEYS.SESSION_USER_ID) || '').trim().toLowerCase();
+      const emailAllowed = !savedUserId || isEmailAllowed(savedUserId);
+
+      if (!emailAllowed) {
+        clearLocalSessionState();
+        setHasHydrated(true);
+        return;
+      }
+
       if (savedRole) {
         setUserRole(savedRole);
         if (savedUserId) {
@@ -147,7 +200,7 @@ const App: React.FC = () => {
     };
 
     initializeData();
-  }, [loadCloudData]);
+  }, [clearLocalSessionState, loadCloudData]);
 
   useEffect(() => {
     if (!userRole) return;
@@ -299,20 +352,14 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = useCallback(() => {
-    setUserRole(null);
-    setCurrentView('home');
-    setSelectedProjectId(null);
-    setCloudUserId(null);
-    setIsCloudConnected(false);
-    setCloudDataLoaded(false);
-    setCloudSyncStatus('offline');
-    localStorage.removeItem(APP_STORAGE_KEYS.ROLE);
-    localStorage.removeItem(APP_STORAGE_KEYS.USER_ID);
-    sessionStorage.removeItem(APP_STORAGE_KEYS.SESSION_ROLE);
-    sessionStorage.removeItem(APP_STORAGE_KEYS.SESSION_USER_ID);
-    localStorage.removeItem(APP_STORAGE_KEYS.CURRENT_VIEW);
-    localStorage.removeItem(APP_STORAGE_KEYS.SELECTED_PROJECT_ID);
-  }, []);
+    if (auth) {
+      auth.signOut().catch((error) => {
+        console.error('Erro ao encerrar sessão Firebase Auth:', error);
+      });
+    }
+
+    clearLocalSessionState();
+  }, [clearLocalSessionState]);
 
   const handleViewChange = useCallback((view: ViewState) => {
     setCurrentView(view);

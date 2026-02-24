@@ -156,6 +156,21 @@ app.get("/api/auth/google/status", (req, res) => {
     res.json({ connected, isAuthenticated: connected });
 });
 
+app.get("/api/auth/google/user", async (req, res) => {
+    const refreshToken = req.cookies.google_refresh_token;
+    if (!refreshToken) {
+        return res.status(401).json({ error: "Not connected" });
+    }
+
+    try {
+        const email = await getAuthenticatedUserEmail(refreshToken);
+        res.json({ connected: true, email });
+    } catch (error) {
+        console.error("User info error:", error);
+        res.status(500).json({ error: "Erro ao obter usuário autenticado" });
+    }
+});
+
 app.post("/api/auth/google/logout", (req, res) => {
     res.clearCookie("google_refresh_token", {
         httpOnly: true,
