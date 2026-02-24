@@ -33,6 +33,26 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.metadata.readonly'
 ];
 
+const createAuthorizedOAuthClient = (refreshToken?: string, accessToken?: string) => {
+  const client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    `${APP_URL}/auth/google/callback`
+  );
+
+  if (refreshToken) {
+    client.setCredentials({ refresh_token: refreshToken });
+    return client;
+  }
+
+  if (accessToken) {
+    client.setCredentials({ access_token: accessToken });
+    return client;
+  }
+
+  return null;
+};
+
 // Auth Routes
 app.get("/api/auth/google/url", (req, res) => {
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
@@ -130,12 +150,12 @@ app.get("/api/auth/google/user", async (req, res) => {
   }
 
   try {
-    oauth2Client.setCredentials(
-      refreshToken
-        ? { refresh_token: refreshToken }
-        : { access_token: accessToken }
-    );
-    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const authClient = createAuthorizedOAuthClient(refreshToken, accessToken);
+    if (!authClient) {
+      return res.status(401).json({ error: "Sessão Google não encontrada" });
+    }
+
+    const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
     const { data } = await oauth2.userinfo.get();
 
     const email = String(data?.email || '').trim().toLowerCase();
@@ -165,11 +185,12 @@ app.post("/api/auth/google/logout", (req, res) => {
 // Google Drive Backup Routes
 app.post("/api/drive/backup", async (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  if (!refreshToken) return res.status(401).json({ error: "Not connected to Google Drive" });
+  const accessToken = req.cookies.google_access_token;
+  const authClient = createAuthorizedOAuthClient(refreshToken, accessToken);
+  if (!authClient) return res.status(401).json({ error: "Not connected to Google Drive" });
 
   try {
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const drive = google.drive({ version: 'v3', auth: authClient });
 
     const { data, filename } = req.body;
 
@@ -233,11 +254,12 @@ app.post("/api/drive/backup", async (req, res) => {
 
 app.post("/api/drive/upload-file", async (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  if (!refreshToken) return res.status(401).json({ error: "Not connected" });
+  const accessToken = req.cookies.google_access_token;
+  const authClient = createAuthorizedOAuthClient(refreshToken, accessToken);
+  if (!authClient) return res.status(401).json({ error: "Not connected" });
 
   try {
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const drive = google.drive({ version: 'v3', auth: authClient });
 
     const { name, mimeType, content, folderName = 'PromptMetal Documents' } = req.body;
 
@@ -280,11 +302,12 @@ app.post("/api/drive/upload-file", async (req, res) => {
 
 app.get("/api/drive/history", async (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  if (!refreshToken) return res.status(401).json({ error: "Not connected" });
+  const accessToken = req.cookies.google_access_token;
+  const authClient = createAuthorizedOAuthClient(refreshToken, accessToken);
+  if (!authClient) return res.status(401).json({ error: "Not connected" });
 
   try {
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const drive = google.drive({ version: 'v3', auth: authClient });
 
     const folderSearch = await drive.files.list({
       q: "name = 'PromptMetal Backups' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",

@@ -48,6 +48,22 @@ function createOAuthClient(req) {
     );
 }
 
+function createAuthorizedOAuthClient(req, refreshToken, accessToken) {
+    const client = createOAuthClient(req);
+
+    if (refreshToken) {
+        client.setCredentials({ refresh_token: refreshToken });
+        return client;
+    }
+
+    if (accessToken) {
+        client.setCredentials({ access_token: accessToken });
+        return client;
+    }
+
+    return null;
+}
+
 const SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/drive.file",
@@ -66,18 +82,22 @@ function requireOAuthEnv(res) {
     return true;
 }
 
-function getDriveClient(refreshToken) {
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
-    return google.drive({ version: "v3", auth: oauth2Client });
+function getDriveClient(req, refreshToken, accessToken) {
+    const authClient = createAuthorizedOAuthClient(req, refreshToken, accessToken);
+    if (!authClient) {
+        return null;
+    }
+
+    return google.drive({ version: "v3", auth: authClient });
 }
 
-async function getAuthenticatedUserEmail(refreshToken, accessToken) {
-    oauth2Client.setCredentials(
-        refreshToken
-            ? { refresh_token: refreshToken }
-            : { access_token: accessToken }
-    );
-    const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
+async function getAuthenticatedUserEmail(req, refreshToken, accessToken) {
+    const authClient = createAuthorizedOAuthClient(req, refreshToken, accessToken);
+    if (!authClient) {
+        throw new Error("Sessão Google não encontrada.");
+    }
+
+    const oauth2 = google.oauth2({ version: "v2", auth: authClient });
     const { data } = await oauth2.userinfo.get();
 
     if (!data?.email) {
@@ -95,7 +115,7 @@ async function resolveFirestoreUserId(req) {
     const refreshToken = req.cookies.google_refresh_token;
     const accessToken = req.cookies.google_access_token;
     if (refreshToken || accessToken) {
-        return await getAuthenticatedUserEmail(refreshToken, accessToken);
+        return await getAuthenticatedUserEmail(req, refreshToken, accessToken);
     }
 
     const fallbackUserId = normalizeUserId(req.body?.userId || req.query?.userId);
@@ -233,7 +253,7 @@ app.get("/api/auth/google/user", async (req, res) => {
     }
 
     try {
-        const email = await getAuthenticatedUserEmail(refreshToken, accessToken);
+        const email = await getAuthenticatedUserEmail(req, refreshToken, accessToken);
         res.json({ connected: true, email });
     } catch (error) {
         console.error("User info error:", error);
@@ -259,12 +279,13 @@ app.post("/api/auth/google/logout", (req, res) => {
 
 app.post("/api/drive/backup", async (req, res) => {
     const refreshToken = req.cookies.google_refresh_token;
-    if (!refreshToken) {
+    const accessToken = req.cookies.google_access_token;
+    const drive = getDriveClient(req, refreshToken, accessToken);
+    if (!drive) {
         return res.status(401).json({ error: "Not connected to Google Drive" });
     }
 
     try {
-        const drive = getDriveClient(refreshToken);
         const { data, filename } = req.body;
 
         let folderId = "";
@@ -322,13 +343,13 @@ app.post("/api/drive/backup", async (req, res) => {
 
 app.get("/api/drive/history", async (req, res) => {
     const refreshToken = req.cookies.google_refresh_token;
-    if (!refreshToken) {
+    const accessToken = req.cookies.google_access_token;
+    const drive = getDriveClient(req, refreshToken, accessToken);
+    if (!drive) {
         return res.status(401).json({ error: "Not connected" });
     }
 
     try {
-        const drive = getDriveClient(refreshToken);
-
         const folderSearch = await drive.files.list({
             q: "name = 'PromptMetal Backups' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
             fields: "files(id)",
@@ -354,12 +375,13 @@ app.get("/api/drive/history", async (req, res) => {
 
 app.post("/api/drive/upload-file", async (req, res) => {
     const refreshToken = req.cookies.google_refresh_token;
-    if (!refreshToken) {
+    const accessToken = req.cookies.google_access_token;
+    const drive = getDriveClient(req, refreshToken, accessToken);
+    if (!drive) {
         return res.status(401).json({ error: "Not connected" });
     }
 
     try {
-        const drive = getDriveClient(refreshToken);
         const { name, mimeType, content, folderName = "PromptMetal Documents" } = req.body;
 
         let folderId = "";
