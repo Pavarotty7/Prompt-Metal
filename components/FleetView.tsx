@@ -1,18 +1,18 @@
 
 import React, { useState, useMemo, useRef, useCallback } from 'react';
-import { Vehicle, VehicleDocument, MaintenanceRecord, UserRole } from '../types';
+import { Vehicle, VehicleDocument, MaintenanceRecord, UserRole, Attachment } from '../types';
 import { driveService } from '../services/driveService';
-import { fileEncodingService } from '../services/fileEncodingService';
-import {
-  Truck,
-  Wrench,
-  Plus,
-  X,
-  Save,
-  Droplets,
-  DollarSign,
-  FileText,
-  UploadCloud,
+import { uploadFile } from '../services/fileService';
+import { 
+  Truck, 
+  Wrench, 
+  Plus, 
+  X, 
+  Save, 
+  Droplets, 
+  DollarSign, 
+  FileText, 
+  UploadCloud, 
   Eye,
   Settings2,
   Gauge,
@@ -49,13 +49,14 @@ interface FleetViewProps {
 const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userRole }) => {
   const isAdmin = userRole === 'admin';
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<'info' | 'history' | 'fuel' | 'documents'>('info');
+  const [modalTab, setModalTab] = useState<'info' | 'history' | 'fuel' | 'documents'>('info'); 
   const [editingVehicle, setEditingVehicle] = useState<VehicleWithFuel | null>(null);
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
-
+  const [isUploading, setIsUploading] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
-
+  
   // Forms State
   const [vehicleForm, setVehicleForm] = useState<Partial<VehicleWithFuel>>({
     model: '',
@@ -75,26 +76,26 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     km: string;
     liters: string;
     cost: string;
-    receiptFile: File | null;
-  }>({
-    vehicleId: '',
-    date: new Date().toISOString().split('T')[0],
-    km: '',
-    liters: '',
+    receiptFiles: File[];
+  }>({ 
+    vehicleId: '', 
+    date: new Date().toISOString().split('T')[0], 
+    km: '', 
+    liters: '', 
     cost: '',
-    receiptFile: null
+    receiptFiles: []
   });
 
   const [docForm, setDocForm] = useState({
     name: '',
-    file: null as File | null
+    files: [] as File[]
   });
-
+  
   // Histórico com cálculo KM/L
   const combinedHistory = useMemo(() => {
     if (!editingVehicle) return [];
     const sortedFuel = [...(editingVehicle.fuelHistory || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
+    
     const fuelWithEff = sortedFuel.map((entry, idx) => {
       let efficiency = null;
       if (idx > 0) {
@@ -112,23 +113,23 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     setModalTab('fuel');
     if (vehicle) {
       setEditingVehicle(vehicle);
-      setFuelForm({
-        vehicleId: vehicle.id,
-        date: new Date().toISOString().split('T')[0],
-        km: vehicle.currentKms.toString(),
-        liters: '',
+      setFuelForm({ 
+        vehicleId: vehicle.id, 
+        date: new Date().toISOString().split('T')[0], 
+        km: vehicle.currentKms.toString(), 
+        liters: '', 
         cost: '',
-        receiptFile: null
+        receiptFiles: [] 
       });
     } else {
       setEditingVehicle(null);
-      setFuelForm({
-        vehicleId: '',
-        date: new Date().toISOString().split('T')[0],
-        km: '',
-        liters: '',
+      setFuelForm({ 
+        vehicleId: '', 
+        date: new Date().toISOString().split('T')[0], 
+        km: '', 
+        liters: '', 
         cost: '',
-        receiptFile: null
+        receiptFiles: []
       });
     }
     setIsModalOpen(true);
@@ -178,7 +179,7 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
       documents: editingVehicle?.documents || []
     };
 
-    const updatedVehicles = editingVehicle
+    const updatedVehicles = editingVehicle 
       ? vehicles.map(v => v.id === editingVehicle.id ? vehicleToSave : v)
       : [vehicleToSave, ...vehicles];
 
@@ -191,31 +192,44 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
     const target = editingVehicle || vehicles.find(v => v.id === fuelForm.vehicleId);
     if (!target) return;
 
-    const receiptUrl = fuelForm.receiptFile ? await fileEncodingService.fileToDataUrl(fuelForm.receiptFile) : undefined;
+    setIsUploading(true);
+    try {
+      const newAttachments: Attachment[] = [];
+      for (const file of fuelForm.receiptFiles) {
+        const url = await uploadFile(file);
+        newAttachments.push({ name: file.name, url });
+      }
 
-    const newLog = {
-      id: Math.random().toString(36).substr(2, 9),
-      date: fuelForm.date,
-      km: Number(fuelForm.km),
-      liters: Number(fuelForm.liters),
-      cost: Number(fuelForm.cost),
-      receiptUrl,
-      receiptFileName: fuelForm.receiptFile?.name
-    };
+      const newLog = { 
+        id: Math.random().toString(36).substr(2, 9), 
+        date: fuelForm.date, 
+        km: Number(fuelForm.km), 
+        liters: Number(fuelForm.liters), 
+        cost: Number(fuelForm.cost),
+        receiptUrl: newAttachments.length > 0 ? newAttachments[0].url : undefined,
+        receiptFileName: newAttachments.length > 0 ? newAttachments[0].name : undefined,
+        attachments: newAttachments
+      };
 
-    const updated = {
-      ...target,
-      fuelHistory: [newLog, ...(target.fuelHistory || [])],
-      currentKms: Math.max(target.currentKms, Number(fuelForm.km))
-    };
-
-    onUpdateVehicles(vehicles.map(v => v.id === updated.id ? updated : v));
-    setIsModalOpen(false);
+      const updated = { 
+        ...target, 
+        fuelHistory: [newLog, ...(target.fuelHistory || [])], 
+        currentKms: Math.max(target.currentKms, Number(fuelForm.km)) 
+      };
+      
+      onUpdateVehicles(vehicles.map(v => v.id === updated.id ? updated : v));
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error('Error uploading fuel receipts:', error);
+      alert('Erro ao carregar recibos. Tente novamente.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleAddDocument = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onUpdateVehicles || !editingVehicle || !docForm.file || !docForm.name) return;
+    if (!onUpdateVehicles || !editingVehicle || docForm.files.length === 0 || !docForm.name) return;
 
     const currentDocs = editingVehicle.documents || [];
     if (currentDocs.length >= 10) {
@@ -223,30 +237,43 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
       return;
     }
 
-    const fileUrl = await fileEncodingService.fileToDataUrl(docForm.file);
+    setIsUploading(true);
+    try {
+      const newAttachments: Attachment[] = [];
+      for (const file of docForm.files) {
+        const url = await uploadFile(file);
+        newAttachments.push({ name: file.name, url });
+      }
 
-    const newDoc: VehicleDocument = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: docForm.name,
-      type: 'Outros',
-      uploadDate: new Date().toISOString().split('T')[0],
-      url: fileUrl,
-      fileName: docForm.file.name
-    };
+      const newDoc: VehicleDocument = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: docForm.name,
+        type: 'Outros',
+        uploadDate: new Date().toISOString().split('T')[0],
+        url: newAttachments[0].url,
+        fileName: newAttachments[0].name,
+        attachments: newAttachments
+      };
 
-    const updatedVehicle = {
-      ...editingVehicle,
-      documents: [...currentDocs, newDoc]
-    };
+      const updatedVehicle = {
+        ...editingVehicle,
+        documents: [...currentDocs, newDoc]
+      };
 
-    onUpdateVehicles(vehicles.map(v => v.id === updatedVehicle.id ? updatedVehicle : v));
-    setEditingVehicle(updatedVehicle);
-    setDocForm({ name: '', file: null });
+      onUpdateVehicles(vehicles.map(v => v.id === updatedVehicle.id ? updatedVehicle : v));
+      setEditingVehicle(updatedVehicle);
+      setDocForm({ name: '', files: [] });
+    } catch (error) {
+      console.error('Error uploading vehicle document:', error);
+      alert('Erro ao carregar documento. Tente novamente.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDeleteDocument = (docId: string) => {
     if (!onUpdateVehicles || !editingVehicle || !isAdmin) return;
-
+    
     const updatedVehicle = {
       ...editingVehicle,
       documents: (editingVehicle.documents || []).filter(d => d.id !== docId)
@@ -292,7 +319,7 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                 </button>
               </div>
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded border inline-block mb-4">{vehicle.plate}</p>
-
+              
               <div className="space-y-2 mb-6">
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
                   <User size={14} className="text-slate-400" />
@@ -339,15 +366,15 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X /></button>
             </div>
-
+            
             <div className="p-2 bg-slate-100 flex gap-2 shrink-0">
               {(['info', 'history', 'fuel', 'documents'] as const).map(tab => (
-                <button
-                  key={tab}
+                <button 
+                  key={tab} 
                   onClick={() => {
                     if (!editingVehicle && (tab === 'history' || tab === 'documents')) return;
                     setModalTab(tab);
-                  }}
+                  }} 
                   disabled={!editingVehicle && (tab === 'history' || tab === 'documents')}
                   className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${!editingVehicle && (tab === 'history' || tab === 'documents') ? 'opacity-30 cursor-not-allowed' : ''} ${modalTab === tab ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
                 >
@@ -364,46 +391,46 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Modelo / Marca</label>
                       <div className="relative">
                         <Truck size={16} className="absolute left-4 top-4 text-slate-400" />
-                        <input required type="text" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 outline-none" value={vehicleForm.model} onChange={e => setVehicleForm({ ...vehicleForm, model: e.target.value })} placeholder="Ex: Mercedes Sprinter" />
+                        <input required type="text" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 outline-none" value={vehicleForm.model} onChange={e => setVehicleForm({...vehicleForm, model: e.target.value})} placeholder="Ex: Mercedes Sprinter" />
                       </div>
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Matrícula</label>
-                      <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 uppercase" value={vehicleForm.plate} onChange={e => setVehicleForm({ ...vehicleForm, plate: e.target.value })} placeholder="AA-00-BB" />
+                      <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 uppercase" value={vehicleForm.plate} onChange={e => setVehicleForm({...vehicleForm, plate: e.target.value})} placeholder="AA-00-BB" />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Ano de Fabrico</label>
-                      <input required type="number" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.year} onChange={e => setVehicleForm({ ...vehicleForm, year: Number(e.target.value) })} />
+                      <input required type="number" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.year} onChange={e => setVehicleForm({...vehicleForm, year: Number(e.target.value)})} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Quilometragem (KM)</label>
                       <div className="relative">
                         <Gauge size={16} className="absolute left-4 top-4 text-slate-400" />
-                        <input required type="number" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.currentKms} onChange={e => setVehicleForm({ ...vehicleForm, currentKms: Number(e.target.value) })} />
+                        <input required type="number" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.currentKms} onChange={e => setVehicleForm({...vehicleForm, currentKms: Number(e.target.value)})} />
                       </div>
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Condutor Habitual</label>
                       <div className="relative">
                         <User size={16} className="absolute left-4 top-4 text-slate-400" />
-                        <input type="text" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.driver} onChange={e => setVehicleForm({ ...vehicleForm, driver: e.target.value })} placeholder="Nome do Condutor" />
+                        <input type="text" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.driver} onChange={e => setVehicleForm({...vehicleForm, driver: e.target.value})} placeholder="Nome do Condutor" />
                       </div>
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Última Revisão</label>
-                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.lastMaintenance} onChange={e => setVehicleForm({ ...vehicleForm, lastMaintenance: e.target.value })} />
+                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.lastMaintenance} onChange={e => setVehicleForm({...vehicleForm, lastMaintenance: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Próxima Revisão</label>
-                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.nextMaintenance} onChange={e => setVehicleForm({ ...vehicleForm, nextMaintenance: e.target.value })} />
+                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.nextMaintenance} onChange={e => setVehicleForm({...vehicleForm, nextMaintenance: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Data Inspeção (IPO)</label>
-                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.annualInspectionDate} onChange={e => setVehicleForm({ ...vehicleForm, annualInspectionDate: e.target.value })} />
+                      <input type="date" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900" value={vehicleForm.annualInspectionDate} onChange={e => setVehicleForm({...vehicleForm, annualInspectionDate: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Status</label>
-                      <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 outline-none" value={vehicleForm.status} onChange={e => setVehicleForm({ ...vehicleForm, status: e.target.value as any })}>
+                      <select className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm text-slate-900 outline-none" value={vehicleForm.status} onChange={e => setVehicleForm({...vehicleForm, status: e.target.value as any})}>
                         <option value="Operacional">Operacional</option>
                         <option value="Manutenção">Em Manutenção</option>
                       </select>
@@ -431,72 +458,84 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                     {!editingVehicle && (
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Selecionar Viatura</label>
-                        <select className="w-full p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:border-emerald-500 outline-none appearance-none" value={fuelForm.vehicleId} onChange={e => setFuelForm({ ...fuelForm, vehicleId: e.target.value })}>
+                        <select className="w-full p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-sm text-slate-900 focus:border-emerald-500 outline-none appearance-none" value={fuelForm.vehicleId} onChange={e => setFuelForm({...fuelForm, vehicleId: e.target.value})}>
                           <option value="">Escolha a Viatura...</option>
                           {vehicles.map(v => <option key={v.id} value={v.id}>{v.model} ({v.plate})</option>)}
                         </select>
                       </div>
                     )}
-
+                    
                     <div className="grid grid-cols-2 gap-6">
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Odômetro (KM)</label>
                         <div className="relative">
                           <Gauge size={18} className="absolute left-4 top-4 text-emerald-600" />
-                          <input type="number" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.km} onChange={e => setFuelForm({ ...fuelForm, km: e.target.value })} placeholder="0" />
+                          <input type="number" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.km} onChange={e => setFuelForm({...fuelForm, km: e.target.value})} placeholder="0" />
                         </div>
                       </div>
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Volume (Litros)</label>
                         <div className="relative">
                           <Droplets size={18} className="absolute left-4 top-4 text-emerald-600" />
-                          <input type="number" step="0.01" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.liters} onChange={e => setFuelForm({ ...fuelForm, liters: e.target.value })} placeholder="0.00" />
+                          <input type="number" step="0.01" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.liters} onChange={e => setFuelForm({...fuelForm, liters: e.target.value})} placeholder="0.00" />
                         </div>
                       </div>
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Custo Total (€)</label>
                         <div className="relative">
                           <DollarSign size={18} className="absolute left-4 top-4 text-emerald-600" />
-                          <input type="number" step="0.01" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-emerald-900 focus:border-emerald-500 outline-none" value={fuelForm.cost} onChange={e => setFuelForm({ ...fuelForm, cost: e.target.value })} placeholder="0.00" />
+                          <input type="number" step="0.01" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black text-lg text-emerald-900 focus:border-emerald-500 outline-none" value={fuelForm.cost} onChange={e => setFuelForm({...fuelForm, cost: e.target.value})} placeholder="0.00" />
                         </div>
                       </div>
                       <div className="animate-fade-in">
                         <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Data do Recibo</label>
                         <div className="relative">
                           <Calendar size={18} className="absolute left-4 top-4 text-emerald-600 pointer-events-none" />
-                          <input type="date" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.date} onChange={e => setFuelForm({ ...fuelForm, date: e.target.value })} />
+                          <input type="date" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 focus:border-emerald-500 outline-none" value={fuelForm.date} onChange={e => setFuelForm({...fuelForm, date: e.target.value})} />
                         </div>
                       </div>
                     </div>
 
                     <div className="animate-fade-in">
-                      <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Anexar Fatura / Recibo</label>
-                      <div
+                      <label className="block text-[11px] font-black uppercase mb-2 text-slate-950 tracking-widest">Anexar Faturas / Recibos (Múltiplos)</label>
+                      <div 
                         className="border-2 border-dashed border-slate-300 rounded-[2rem] p-8 bg-slate-50 relative group flex flex-col items-center justify-center transition-all hover:border-emerald-500 hover:bg-emerald-50/30"
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        <input
-                          type="file"
+                        <input 
+                          type="file" 
+                          multiple
                           ref={fileInputRef}
-                          className="hidden"
-                          onChange={e => setFuelForm({ ...fuelForm, receiptFile: e.target.files?.[0] || null })}
+                          className="hidden" 
+                          onChange={e => setFuelForm({...fuelForm, receiptFiles: Array.from(e.target.files || [])})}
                         />
                         <UploadCloud size={40} className="text-slate-400 group-hover:text-emerald-600 mb-2 transition-all" />
                         <p className="text-[11px] font-black text-slate-600 uppercase tracking-widest group-hover:text-emerald-700">
-                          {fuelForm.receiptFile ? fuelForm.receiptFile.name : 'Clique para selecionar arquivo'}
+                          {fuelForm.receiptFiles.length > 0 
+                            ? `${fuelForm.receiptFiles.length} arquivos selecionados` 
+                            : 'Clique para selecionar arquivos'}
                         </p>
                         <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold">PDF, JPG ou PNG</p>
                       </div>
                     </div>
                   </div>
-
+                  
                   <div className="pt-6 border-t border-slate-100">
-                    <button
-                      onClick={handleAddFuel}
-                      disabled={!fuelForm.km || !fuelForm.liters || !fuelForm.cost || (!editingVehicle && !fuelForm.vehicleId)}
+                    <button 
+                      onClick={handleAddFuel} 
+                      disabled={isUploading || !fuelForm.km || !fuelForm.liters || !fuelForm.cost || (!editingVehicle && !fuelForm.vehicleId)}
                       className="w-full py-6 bg-emerald-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] shadow-2xl hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                     >
-                      <CheckCircle2 size={24} /> Confirmar Lançamento
+                      {isUploading ? (
+                        <div className="flex items-center gap-3">
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Enviando...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <CheckCircle2 size={24} /> Confirmar Lançamento
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -529,22 +568,34 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                             </p>
                             <div className="flex gap-2 mt-1">
                               {log.efficiency && <span className="text-[9px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><Zap size={10} /> {log.efficiency} KM/L</span>}
-                              {log.receiptUrl && <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><Paperclip size={10} /> Documentado</span>}
+                              {(log.receiptUrl || (log.attachments && log.attachments.length > 0)) && <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><Paperclip size={10} /> Documentado</span>}
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="text-right">
-                            <p className={`text-lg font-black ${log.type === 'fuel' ? 'text-emerald-700' : 'text-blue-700'}`}>€ {log.cost.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}</p>
+                            <p className={`text-lg font-black ${log.type === 'fuel' ? 'text-emerald-700' : 'text-blue-700'}`}>€ {log.cost.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
                           </div>
-                          {log.receiptUrl && (
-                            <button
-                              onClick={() => setViewingReceipt(log.receiptUrl)}
-                              className="p-3 bg-white border border-slate-200 rounded-xl text-slate-900 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
-                            >
-                              <Eye size={18} />
-                            </button>
-                          )}
+                          <div className="flex gap-1">
+                            {(log.attachments || []).map((att: any, idx: number) => (
+                              <button 
+                                key={idx}
+                                onClick={() => setViewingReceipt(att.url)}
+                                className="p-3 bg-white border border-slate-200 rounded-xl text-slate-900 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                                title={att.name}
+                              >
+                                <Paperclip size={18} />
+                              </button>
+                            ))}
+                            {!log.attachments && log.receiptUrl && (
+                              <button 
+                                onClick={() => setViewingReceipt(log.receiptUrl)}
+                                className="p-3 bg-white border border-slate-200 rounded-xl text-slate-900 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                              >
+                                <Eye size={18} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )) : (
@@ -572,38 +623,48 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Nome do Documento</label>
-                          <input
-                            required
-                            type="text"
-                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-600"
+                          <input 
+                            required 
+                            type="text" 
+                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-600" 
                             placeholder="Ex: Carta de Condução, Seguro 2024"
                             value={docForm.name}
-                            onChange={e => setDocForm({ ...docForm, name: e.target.value })}
+                            onChange={e => setDocForm({...docForm, name: e.target.value})}
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Anexo (Foto/PDF)</label>
-                          <div
+                          <label className="block text-[10px] font-black uppercase mb-2 text-slate-950 tracking-widest">Anexos (Múltiplos)</label>
+                          <div 
                             className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl font-black text-xs text-slate-500 cursor-pointer flex items-center justify-between"
                             onClick={() => docFileInputRef.current?.click()}
                           >
-                            <span className="truncate">{docForm.file ? docForm.file.name : 'Selecionar Arquivo'}</span>
+                            <span className="truncate">{docForm.files.length > 0 ? `${docForm.files.length} arquivos` : 'Selecionar Arquivos'}</span>
                             <UploadCloud size={16} />
-                            <input
-                              type="file"
+                            <input 
+                              type="file" 
+                              multiple
                               ref={docFileInputRef}
-                              className="hidden"
-                              onChange={e => setDocForm({ ...docForm, file: e.target.files?.[0] || null })}
+                              className="hidden" 
+                              onChange={e => setDocForm({...docForm, files: Array.from(e.target.files || [])})}
                             />
                           </div>
                         </div>
                       </div>
-                      <button
-                        type="submit"
-                        disabled={!docForm.name || !docForm.file}
+                      <button 
+                        type="submit" 
+                        disabled={isUploading || !docForm.name || docForm.files.length === 0}
                         className="w-full py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
-                        <Plus size={16} /> Adicionar Documento
+                        {isUploading ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Enviando...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <Plus size={16} /> Adicionar Documento
+                          </>
+                        )}
                       </button>
                     </form>
                   )}
@@ -619,14 +680,26 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <button
-                            onClick={() => setViewingReceipt(doc.url || '')}
-                            className="p-2 text-slate-400 hover:text-blue-600 transition-all"
-                          >
-                            <Eye size={16} />
-                          </button>
+                          {(doc.attachments || []).map((att, idx) => (
+                            <button 
+                              key={idx}
+                              onClick={() => setViewingReceipt(att.url)}
+                              className="p-2 text-slate-400 hover:text-blue-600 transition-all"
+                              title={att.name}
+                            >
+                              <Paperclip size={16} />
+                            </button>
+                          ))}
+                          {!doc.attachments && doc.url && (
+                            <button 
+                              onClick={() => setViewingReceipt(doc.url || '')}
+                              className="p-2 text-slate-400 hover:text-blue-600 transition-all"
+                            >
+                              <Eye size={16} />
+                            </button>
+                          )}
                           {isAdmin && (
-                            <button
+                            <button 
                               onClick={() => handleDeleteDocument(doc.id)}
                               className="p-2 text-slate-400 hover:text-red-600 transition-all"
                             >
@@ -643,7 +716,7 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
                       </div>
                     )}
                   </div>
-
+                  
                   {editingVehicle.documents && editingVehicle.documents.length >= 10 && (
                     <p className="text-center text-[10px] font-black text-amber-600 uppercase tracking-widest animate-pulse">
                       Limite de 10 documentos atingido
@@ -659,21 +732,21 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
       {/* MODAL: VISUALIZAÇÃO DE COMPROVANTE */}
       {viewingReceipt && (
         <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4" onClick={() => setViewingReceipt(null)}>
-          <div className="relative max-w-5xl max-h-[95vh] w-full bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
-            <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-              <div className="flex items-center gap-4">
-                <FileText size={24} className="text-emerald-500" />
-                <h4 className="font-black text-sm uppercase tracking-widest">Visualização de Documento</h4>
+           <div className="relative max-w-5xl max-h-[95vh] w-full bg-white rounded-[2.5rem] overflow-hidden shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+              <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
+                <div className="flex items-center gap-4">
+                   <FileText size={24} className="text-emerald-500" />
+                   <h4 className="font-black text-sm uppercase tracking-widest">Visualização de Documento</h4>
+                </div>
+                <button onClick={() => setViewingReceipt(null)} className="p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"><X size={28}/></button>
               </div>
-              <button onClick={() => setViewingReceipt(null)} className="p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"><X size={28} /></button>
-            </div>
-            <div className="p-4 flex items-center justify-center min-h-[500px] bg-slate-100 overflow-auto">
-              <img src={viewingReceipt} className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" alt="Documento" />
-            </div>
-            <div className="bg-white p-6 border-t border-slate-100 flex justify-end">
-              <button onClick={() => setViewingReceipt(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar</button>
-            </div>
-          </div>
+              <div className="p-4 flex items-center justify-center min-h-[500px] bg-slate-100 overflow-auto">
+                 <img src={viewingReceipt} className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl" alt="Documento" />
+              </div>
+              <div className="bg-white p-6 border-t border-slate-100 flex justify-end">
+                  <button onClick={() => setViewingReceipt(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar</button>
+              </div>
+           </div>
         </div>
       )}
     </div>

@@ -11,57 +11,20 @@ interface DriveHistoryItem {
 
 interface SettingsViewProps {
   onImportSuccess: () => void;
-  onCloudConnectionChange: (connected: boolean) => void;
 }
 
-const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudConnectionChange }) => {
+const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [driveHistory, setDriveHistory] = useState<DriveHistoryItem[]>([]);
   const [isBackingUp, setIsBackingUp] = useState(false);
-  const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
-
-  const confirmDriveConnection = async (retries = 12, intervalMs = 1000) => {
-    for (let attempt = 0; attempt < retries; attempt++) {
-      try {
-        const res = await fetch('/api/auth/google/status', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.connected) {
-            setIsDriveConnected(true);
-            onCloudConnectionChange(true);
-            setBackupStatusMessage('Google Drive conectado com sucesso.');
-            await fetchDriveHistory();
-            return true;
-          }
-        }
-      } catch {
-      }
-
-      await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
-    }
-
-    setIsDriveConnected(false);
-    onCloudConnectionChange(false);
-    setBackupStatusMessage('Login concluído, mas a sessão não foi confirmada. Clique em Conectar Google Drive novamente.');
-    return false;
-  };
 
   useEffect(() => {
     checkDriveStatus();
-
+    
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        confirmDriveConnection();
-        return;
-      }
-
-      if (event.data?.type === 'OAUTH_AUTH_ERROR') {
-        const message = event.data?.message || 'Falha ao concluir autenticação com Google Drive.';
-        setIsDriveConnected(false);
-        onCloudConnectionChange(false);
-        setBackupStatusMessage(message);
-        alert(message);
+        checkDriveStatus();
       }
     };
     window.addEventListener('message', handleMessage);
@@ -70,94 +33,43 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudCon
 
   const checkDriveStatus = async () => {
     try {
-      const res = await fetch('/api/auth/google/status', { credentials: 'include' });
-      if (!res.ok) {
-        setIsDriveConnected(false);
-        onCloudConnectionChange(false);
-        return;
-      }
-
+      const res = await fetch('/api/auth/google/status');
       const data = await res.json();
       setIsDriveConnected(data.connected);
-      onCloudConnectionChange(!!data.connected);
       if (data.connected) {
-        await fetchDriveHistory();
+        fetchDriveHistory();
       }
     } catch (error) {
       console.error("Error checking drive status:", error);
-      setIsDriveConnected(false);
-      onCloudConnectionChange(false);
     }
   };
 
   const fetchDriveHistory = async () => {
     try {
-      const res = await fetch('/api/drive/history', { credentials: 'include' });
-      if (!res.ok) {
-        setDriveHistory([]);
-        return;
-      }
-
+      const res = await fetch('/api/drive/history');
       const data = await res.json();
       setDriveHistory(data.history || []);
     } catch (error) {
       console.error("Error fetching history:", error);
-      setDriveHistory([]);
     }
   };
 
   const handleConnectDrive = async () => {
-    const popup = window.open('', 'google_oauth', 'width=600,height=700');
-
-    if (!popup) {
-      alert('Não foi possível abrir a janela de login. Verifique se o bloqueador de pop-up está desativado para este site.');
-      return;
-    }
-
-    popup.document.write('<p style="font-family: sans-serif; padding: 16px;">Conectando ao Google Drive...</p>');
-
     try {
-      const res = await fetch('/api/auth/google/url', { credentials: 'include' });
-      if (!res.ok) {
-        popup.close();
-        alert('Não foi possível iniciar a autenticação com o Google Drive.');
-        return;
-      }
-
-      const data = await res.json();
-      const authUrl = typeof data?.url === 'string' ? data.url : '';
-
-      if (!authUrl.startsWith('http')) {
-        popup.close();
-        alert(data?.error || 'URL de autenticação inválida. Verifique as configurações do Google OAuth nas Functions.');
-        return;
-      }
-
-      popup.location.href = authUrl;
-
-      const startedAt = Date.now();
-      const monitor = window.setInterval(() => {
-        const timedOut = Date.now() - startedAt > 2 * 60 * 1000;
-        if (popup.closed || timedOut) {
-          window.clearInterval(monitor);
-          confirmDriveConnection();
-        }
-      }, 1000);
+      const res = await fetch('/api/auth/google/url');
+      const { url } = await res.json();
+      window.open(url, 'google_oauth', 'width=600,height=700');
     } catch (error) {
       console.error("Error getting auth url:", error);
-      popup.close();
-      alert('Erro ao conectar com o Google Drive.');
     }
   };
 
   const handleDisconnectDrive = async () => {
     if (!confirm("Deseja desconectar sua conta do Google Drive?")) return;
     try {
-      await fetch('/api/auth/google/logout', { method: 'POST', credentials: 'include' });
+      await fetch('/api/auth/google/logout', { method: 'POST' });
       setIsDriveConnected(false);
-      onCloudConnectionChange(false);
       setDriveHistory([]);
-      setBackupStatusMessage(null);
     } catch (error) {
       console.error("Error logging out:", error);
     }
@@ -165,62 +77,23 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudCon
 
   const handleDriveBackup = async () => {
     setIsBackingUp(true);
-    setBackupStatusMessage(null);
     try {
-      const statusRes = await fetch('/api/auth/google/status', { credentials: 'include' });
-      if (!statusRes.ok) {
-        setIsDriveConnected(false);
-        setBackupStatusMessage('Não foi possível validar a conexão.');
-        alert('Não foi possível validar a conexão com o Google Drive.');
-        return;
-      }
-
-      const statusData = await statusRes.json();
-      if (!statusData.connected) {
-        setIsDriveConnected(false);
-        setBackupStatusMessage('Conecte o Google Drive para salvar backup.');
-        alert('Conecte sua conta Google Drive antes de salvar.');
-        return;
-      }
-
       const data = databaseService.getAllData();
       const res = await fetch('/api/drive/backup', {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           data,
           filename: `promptmetal_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
         })
       });
-
-      if (!res.ok) {
-        if (res.status === 401) {
-          setIsDriveConnected(false);
-          setBackupStatusMessage('Sessão expirada. Reconecte o Google Drive.');
-          alert('Sessão expirada. Reconecte sua conta Google Drive.');
-          return;
-        }
-
-        const errorBody = await res.json().catch(() => ({}));
-        const errorMessage = errorBody?.error || 'Erro ao realizar backup no Google Drive.';
-        setBackupStatusMessage(errorMessage);
-        alert(errorMessage);
-        return;
-      }
-
       const result = await res.json();
       if (result.success) {
         setDriveHistory(result.history);
-        setBackupStatusMessage('Backup salvo com sucesso no Google Drive.');
         alert("Backup realizado com sucesso no Google Drive!");
-      } else {
-        setBackupStatusMessage('Falha ao salvar backup no Google Drive.');
-        alert("Falha ao salvar backup no Google Drive.");
       }
     } catch (error) {
       console.error("Backup error:", error);
-      setBackupStatusMessage('Erro de conexão ao salvar backup.');
       alert("Erro ao realizar backup.");
     } finally {
       setIsBackingUp(false);
@@ -249,7 +122,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudCon
       try {
         const content = e.target?.result as string;
         const data = JSON.parse(content);
-
+        
         if (confirm("Isso irá substituir todos os dados atuais. Deseja continuar?")) {
           databaseService.importAllData(data);
           onImportSuccess();
@@ -287,18 +160,18 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudCon
                 <p className="text-xs text-slate-500 font-bold uppercase">Backup automático e sincronização na nuvem</p>
               </div>
             </div>
-
+            
             {isDriveConnected ? (
               <div className="flex gap-3">
-                <button
+                <button 
                   onClick={handleDriveBackup}
                   disabled={isBackingUp}
                   className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all disabled:opacity-50"
                 >
                   {isBackingUp ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  Salvar no Google Drive
+                  Sincronizar Agora
                 </button>
-                <button
+                <button 
                   onClick={handleDisconnectDrive}
                   className="flex items-center gap-2 bg-white border border-red-200 text-red-600 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition-all"
                 >
@@ -306,7 +179,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudCon
                 </button>
               </div>
             ) : (
-              <button
+              <button 
                 onClick={handleConnectDrive}
                 className="flex items-center gap-2 bg-blue-600 text-white px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
               >
@@ -314,18 +187,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudCon
               </button>
             )}
           </div>
-
-          {backupStatusMessage && (
-            <div className="mb-6 p-3 rounded-xl border border-slate-200 bg-slate-50">
-              <p className="text-[10px] font-black text-slate-700 uppercase tracking-wider">{backupStatusMessage}</p>
-            </div>
-          )}
-
-          {isDriveConnected && (
-            <div className="mb-6 p-3 rounded-xl border border-emerald-200 bg-emerald-50">
-              <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">Auto-save no Firestore ativo. Não é necessário clicar em salvar.</p>
-            </div>
-          )}
 
           {isDriveConnected && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -383,12 +244,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudCon
               <p className="text-xs text-slate-500 font-bold uppercase">Exporte todos os seus dados para segurança</p>
             </div>
           </div>
-
+          
           <p className="text-sm text-slate-600 mb-8 leading-relaxed">
             Recomendamos realizar o backup semanalmente para garantir a integridade das suas informações. O arquivo gerado contém projetos, transações, equipe e registros de frota.
           </p>
 
-          <button
+          <button 
             onClick={handleExportBackup}
             className="w-full flex items-center justify-center gap-3 bg-slate-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl"
           >
@@ -414,15 +275,15 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess, onCloudCon
             </p>
           </div>
 
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleImportBackup}
-            className="hidden"
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImportBackup} 
+            className="hidden" 
             accept=".json"
           />
-
-          <button
+          
+          <button 
             onClick={() => fileInputRef.current?.click()}
             className="w-full flex items-center justify-center gap-3 bg-white border-2 border-slate-900 text-slate-900 py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-50 transition-all"
           >

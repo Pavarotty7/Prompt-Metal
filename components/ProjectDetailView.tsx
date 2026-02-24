@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Project, MaterialLog, UserRole, Employee, ProjectDocument, BudgetTask, ProjectStatus } from '../types';
+import { Project, MaterialLog, UserRole, Employee, ProjectDocument, BudgetTask, ProjectStatus, Attachment } from '../types';
 import BudgetProgressManager from './BudgetProgressManager';
+import { uploadFile } from '../services/fileService';
 import { 
   ArrowLeft, 
   Package, 
@@ -56,6 +57,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
   const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   
   const [materialForm, setMaterialForm] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -66,71 +68,84 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     supplier: '',
     invoice: ''
   });
-  const [materialAttachment, setMaterialAttachment] = useState<File | null>(null);
+  const [materialAttachments, setMaterialAttachments] = useState<File[]>([]);
 
   const [docForm, setDocForm] = useState({
     name: '',
     type: 'Planta' as ProjectDocument['type'],
   });
-  const [docAttachment, setDocAttachment] = useState<File | null>(null);
+  const [docAttachments, setDocAttachments] = useState<File[]>([]);
 
   const [newChecklistItem, setNewChecklistItem] = useState({ text: '', critical: false, deadline: '' });
 
-  const handleSaveMaterial = (e: React.FormEvent) => {
+  const handleSaveMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin || !onUpdateProject) return;
 
-    const materialData = {
-      materialName: materialForm.materialName,
-      quantity: Number(materialForm.quantity),
-      unit: materialForm.unit,
-      unitPrice: Number(materialForm.unitPrice),
-      date: materialForm.date,
-      supplier: materialForm.supplier,
-      invoice: materialForm.invoice,
-      attachmentName: materialAttachment?.name,
-      attachmentUrl: materialAttachment ? URL.createObjectURL(materialAttachment) : undefined
-    };
+    setIsUploading(true);
+    try {
+      const newAttachments = await Promise.all(
+        materialAttachments.map(async (file) => {
+          const { url } = await uploadFile(file);
+          return { name: file.name, url };
+        })
+      );
 
-    let updatedMaterialLogs = [...(project.materialLogs || [])];
-    let newSpent = project.spent;
-
-    if (editingMaterialId) {
-      const index = updatedMaterialLogs.findIndex(m => m.id === editingMaterialId);
-      if (index !== -1) {
-        const oldMaterial = updatedMaterialLogs[index];
-        const oldCost = oldMaterial.quantity * oldMaterial.unitPrice;
-        const newCost = materialData.quantity * materialData.unitPrice;
-        
-        updatedMaterialLogs[index] = {
-          ...oldMaterial,
-          ...materialData,
-          attachmentName: materialData.attachmentName || oldMaterial.attachmentName,
-          attachmentUrl: materialData.attachmentUrl || oldMaterial.attachmentUrl
-        };
-        newSpent = project.spent - oldCost + newCost;
-      }
-    } else {
-      const newMaterial: MaterialLog = {
-        id: Math.random().toString(36).substr(2, 9),
-        projectId: project.id,
-        ...materialData,
-        type: 'entrada'
+      const materialData = {
+        materialName: materialForm.materialName,
+        quantity: Number(materialForm.quantity),
+        unit: materialForm.unit,
+        unitPrice: Number(materialForm.unitPrice),
+        date: materialForm.date,
+        supplier: materialForm.supplier,
+        invoice: materialForm.invoice,
       };
-      updatedMaterialLogs = [newMaterial, ...updatedMaterialLogs];
-      newSpent = project.spent + (newMaterial.quantity * newMaterial.unitPrice);
+
+      let updatedMaterialLogs = [...(project.materialLogs || [])];
+      let newSpent = project.spent;
+
+      if (editingMaterialId) {
+        const index = updatedMaterialLogs.findIndex(m => m.id === editingMaterialId);
+        if (index !== -1) {
+          const oldMaterial = updatedMaterialLogs[index];
+          const oldCost = oldMaterial.quantity * oldMaterial.unitPrice;
+          const newCost = materialData.quantity * materialData.unitPrice;
+          
+          updatedMaterialLogs[index] = {
+            ...oldMaterial,
+            ...materialData,
+            attachments: [...(oldMaterial.attachments || []), ...newAttachments]
+          };
+          newSpent = project.spent - oldCost + newCost;
+        }
+      } else {
+        const newMaterial: MaterialLog = {
+          id: Math.random().toString(36).substr(2, 9),
+          projectId: project.id,
+          ...materialData,
+          type: 'entrada',
+          attachments: newAttachments
+        };
+        updatedMaterialLogs = [newMaterial, ...updatedMaterialLogs];
+        newSpent = project.spent + (newMaterial.quantity * newMaterial.unitPrice);
+      }
+
+      onUpdateProject({
+        ...project,
+        materialLogs: updatedMaterialLogs,
+        spent: newSpent
+      });
+
+      setIsMaterialModalOpen(false);
+      setEditingMaterialId(null);
+      setMaterialForm({ date: new Date().toISOString().split('T')[0], materialName: '', quantity: '', unit: 'un', unitPrice: '', supplier: '', invoice: '' });
+      setMaterialAttachments([]);
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Erro ao salvar material. Verifique os anexos.");
+    } finally {
+      setIsUploading(false);
     }
-
-    onUpdateProject({
-      ...project,
-      materialLogs: updatedMaterialLogs,
-      spent: newSpent
-    });
-
-    setIsMaterialModalOpen(false);
-    setEditingMaterialId(null);
-    setMaterialForm({ date: new Date().toISOString().split('T')[0], materialName: '', quantity: '', unit: 'un', unitPrice: '', supplier: '', invoice: '' });
-    setMaterialAttachment(null);
   };
 
   const handleEditMaterial = (material: MaterialLog) => {
@@ -177,63 +192,40 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     e.preventDefault();
     if (!isAdmin || !onUpdateProject) return;
 
-    let driveUrl = undefined;
-    
-    // Upload to Google Drive if connected
-    if (docAttachment) {
-      try {
-        const statusRes = await fetch('/api/auth/google/status');
-        const { connected } = await statusRes.json();
-        
-        if (connected) {
-          const reader = new FileReader();
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onload = () => {
-              const base64 = (reader.result as string).split(',')[1];
-              resolve(base64);
-            };
-            reader.readAsDataURL(docAttachment);
-          });
-          
-          const base64 = await base64Promise;
-          const uploadRes = await fetch('/api/drive/upload-file', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: docAttachment.name,
-              mimeType: docAttachment.type,
-              content: base64,
-              folderName: `PromptMetal - ${project.name}`
-            })
-          });
-          const uploadData = await uploadRes.json();
-          if (uploadData.success) {
-            driveUrl = uploadData.url;
-          }
-        }
-      } catch (error) {
-        console.error("Error syncing to Drive:", error);
+    setIsUploading(true);
+    try {
+      const newAttachments: Attachment[] = [];
+      
+      // Upload to local server (and potentially Drive)
+      for (const file of docAttachments) {
+        const { url } = await uploadFile(file);
+        newAttachments.push({ name: file.name, url });
       }
+
+      const newDoc: ProjectDocument = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: docForm.name || (docAttachments.length > 0 ? docAttachments[0].name : 'Documento'),
+        type: docForm.type,
+        uploadDate: new Date().toISOString().split('T')[0],
+        status: 'Válido',
+        fileName: docAttachments.length > 0 ? docAttachments[0].name : 'anexo.pdf',
+        attachments: newAttachments
+      };
+
+      onUpdateProject({
+        ...project,
+        documents: [newDoc, ...(project.documents || [])]
+      });
+
+      setIsDocModalOpen(false);
+      setDocForm({ name: '', type: 'Planta' });
+      setDocAttachments([]);
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Erro ao salvar documento.");
+    } finally {
+      setIsUploading(false);
     }
-
-    const newDoc: ProjectDocument = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: docForm.name || docAttachment?.name || 'Documento',
-      type: docForm.type,
-      uploadDate: new Date().toISOString().split('T')[0],
-      status: 'Válido',
-      fileName: docAttachment?.name || 'anexo.pdf',
-      url: driveUrl || (docAttachment ? URL.createObjectURL(docAttachment) : undefined)
-    };
-
-    onUpdateProject({
-      ...project,
-      documents: [newDoc, ...(project.documents || [])]
-    });
-
-    setIsDocModalOpen(false);
-    setDocForm({ name: '', type: 'Planta' });
-    setDocAttachment(null);
   };
 
   const handleInvalidateDoc = (id: string) => {
@@ -357,7 +349,23 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
         )}
 
         {activeTab === 'materials' && (
-           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+          <div className="space-y-6 animate-fade-in">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+               <div className="bg-slate-900 p-6 rounded-[2rem] text-white shadow-xl">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Orçamento Total</p>
+                  <p className="text-xl font-black">€ {project.budget.toLocaleString('pt-PT')}</p>
+               </div>
+               <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Total Gasto (Materiais)</p>
+                  <p className="text-xl font-black text-red-600">€ {project.spent.toLocaleString('pt-PT')}</p>
+               </div>
+               <div className="bg-emerald-50 p-6 rounded-[2rem] border border-emerald-100 shadow-sm">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 mb-1">Saldo Remanescente</p>
+                  <p className="text-xl font-black text-emerald-700">€ {(project.budget - project.spent).toLocaleString('pt-PT')}</p>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
              <div className="p-8 border-b border-slate-200 flex justify-between items-center bg-slate-50">
                 <div><h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2"><Package size={18} /> Livro de Materiais</h3><p className="text-[9px] font-bold text-slate-600 uppercase mt-1">Auditado por NF e Fornecedor</p></div>
                 {isAdmin && (<button onClick={() => setIsMaterialModalOpen(true)} className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black flex items-center gap-2 shadow-xl"><Plus size={16} className="text-amber-500" /> Lançar Entrada</button>)}
@@ -384,7 +392,12 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                             <td className="py-5 px-8 text-sm font-black text-right text-emerald-800">{(m.quantity * m.unitPrice).toLocaleString('pt-PT', {minimumFractionDigits: 2})}</td>
                             <td className="py-5 px-8">
                               <div className="flex items-center justify-center gap-2">
-                                {m.attachmentUrl && (
+                                {(m.attachments || []).map((att, idx) => (
+                                  <button key={idx} onClick={() => setViewingAttachment(att.url)} className="p-2 text-slate-400 hover:text-slate-900 transition-all" title={att.name}>
+                                    <Paperclip size={14} />
+                                  </button>
+                                ))}
+                                {!m.attachments && m.attachmentUrl && (
                                   <button onClick={() => setViewingAttachment(m.attachmentUrl!)} className="p-2 text-slate-400 hover:text-slate-900 transition-all" title="Ver Anexo">
                                     <Paperclip size={14} />
                                   </button>
@@ -411,6 +424,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                 </table>
              </div>
            </div>
+          </div>
         )}
 
         {activeTab === 'documents' && (
@@ -433,7 +447,10 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                         <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
                             <span className="text-[9px] text-slate-400 font-bold uppercase">{new Date(doc.uploadDate).toLocaleDateString('pt-PT')}</span>
                             <div className="flex gap-2">
-                                {doc.url && <button onClick={() => setViewingAttachment(doc.url!)} className="p-2 text-slate-400 hover:text-slate-900 transition-colors"><Eye size={16}/></button>}
+                                {(doc.attachments || []).map((att, idx) => (
+                                  <button key={idx} onClick={() => setViewingAttachment(att.url)} className="p-2 text-slate-400 hover:text-slate-900 transition-colors" title={att.name}><Eye size={16}/></button>
+                                ))}
+                                {!doc.attachments && doc.url && <button onClick={() => setViewingAttachment(doc.url!)} className="p-2 text-slate-400 hover:text-slate-900 transition-colors"><Eye size={16}/></button>}
                                 {isAdmin && doc.status === 'Válido' && <button onClick={() => handleInvalidateDoc(doc.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors"><Ban size={16}/></button>}
                             </div>
                         </div>
@@ -556,21 +573,34 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                        </div>
                     </div>
                     <div className="col-span-2">
-                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Anexar Comprovante (Opcional)</label>
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Anexar Comprovantes (Múltiplos)</label>
                        <div 
                          className="border-2 border-dashed border-slate-300 rounded-[2rem] p-8 bg-slate-50 relative group flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100"
                          onClick={() => materialFileInputRef.current?.click()}
                        >
                           <UploadCloud size={32} className="text-slate-400 mb-2" />
-                          <p className="text-[10px] font-black text-slate-600 uppercase">{materialAttachment ? materialAttachment.name : 'Selecionar Documento'}</p>
-                          <input type="file" ref={materialFileInputRef} className="hidden" onChange={e => setMaterialAttachment(e.target.files?.[0] || null)} />
+                          <p className="text-[10px] font-black text-slate-600 uppercase">
+                            {materialAttachments.length > 0 
+                              ? `${materialAttachments.length} arquivos selecionados` 
+                              : 'Selecionar Documentos'}
+                          </p>
+                          <input type="file" ref={materialFileInputRef} className="hidden" multiple onChange={e => setMaterialAttachments(Array.from(e.target.files || []))} />
                        </div>
                     </div>
                  </div>
                  <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
-                    <button type="button" onClick={() => { setIsMaterialModalOpen(false); setEditingMaterialId(null); }} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
-                    <button type="submit" className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2">
-                       <Save size={18} className="text-amber-500" /> {editingMaterialId ? 'Atualizar Material' : 'Salvar Material'}
+                    <button type="button" disabled={isUploading} onClick={() => { setIsMaterialModalOpen(false); setEditingMaterialId(null); }} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                    <button type="submit" disabled={isUploading} className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2">
+                       {isUploading ? (
+                         <>
+                           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                           Salvando...
+                         </>
+                       ) : (
+                         <>
+                           <Save size={18} className="text-amber-500" /> {editingMaterialId ? 'Atualizar Material' : 'Salvar Material'}
+                         </>
+                       )}
                     </button>
                  </div>
               </form>
@@ -601,20 +631,33 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                     </select>
                  </div>
                  <div>
-                    <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Anexo (Foto/PDF)</label>
+                    <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Anexos (Múltiplos Foto/PDF)</label>
                     <div 
                       className="border-2 border-dashed border-slate-300 rounded-[2rem] p-8 bg-slate-50 relative group flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100"
                       onClick={() => docFileInputRef.current?.click()}
                     >
                        <UploadCloud size={32} className="text-slate-400 mb-2" />
-                       <p className="text-[10px] font-black text-slate-600 uppercase">{docAttachment ? docAttachment.name : 'Clique para selecionar arquivo'}</p>
-                       <input type="file" ref={docFileInputRef} className="hidden" onChange={e => setDocAttachment(e.target.files?.[0] || null)} />
+                       <p className="text-[10px] font-black text-slate-600 uppercase">
+                         {docAttachments.length > 0 
+                           ? `${docAttachments.length} arquivos selecionados` 
+                           : 'Clique para selecionar arquivos'}
+                       </p>
+                       <input type="file" ref={docFileInputRef} className="hidden" multiple onChange={e => setDocAttachments(Array.from(e.target.files || []))} />
                     </div>
                  </div>
                  <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
-                    <button type="button" onClick={() => setIsDocModalOpen(false)} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
-                    <button type="submit" disabled={!docAttachment} className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2 disabled:opacity-50">
-                       <Save size={18} className="text-blue-500" /> Salvar no Arquivo
+                    <button type="button" disabled={isUploading} onClick={() => setIsDocModalOpen(false)} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                    <button type="submit" disabled={isUploading || docAttachments.length === 0} className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2 disabled:opacity-50">
+                       {isUploading ? (
+                         <>
+                           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                           Salvando...
+                         </>
+                       ) : (
+                         <>
+                           <Save size={18} className="text-blue-500" /> Salvar no Arquivo
+                         </>
+                       )}
                     </button>
                  </div>
               </form>

@@ -4,7 +4,7 @@ import { ShieldCheck, User, Eye, EyeOff, Lock, CheckCircle2 } from 'lucide-react
 import { UserRole } from '../types';
 
 interface RoleSelectionProps {
-  onSelect: (role: UserRole, stayLoggedIn: boolean, userId: string) => void;
+  onSelect: (role: UserRole, stayLoggedIn: boolean) => void;
 }
 
 const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
@@ -22,18 +22,17 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    const normalizedUser = username.trim().toLowerCase();
-
+    
     // Check Admin users
     const adminPassword = ADMIN_USERS[username as keyof typeof ADMIN_USERS];
     if (adminPassword && adminPassword === password) {
-      onSelect('admin', stayLoggedIn, normalizedUser || username);
+      onSelect('admin', stayLoggedIn);
       return;
     }
 
     // Check Guest
     if (username.toLowerCase() === 'convidado' && password === '1234') {
-      onSelect('guest', stayLoggedIn, normalizedUser || 'convidado');
+      onSelect('guest', stayLoggedIn);
       return;
     }
 
@@ -72,7 +71,7 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors">
                     <User size={18} />
                   </div>
-                  <input
+                  <input 
                     autoFocus
                     type="text"
                     value={username}
@@ -89,14 +88,14 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors">
                     <Lock size={18} />
                   </div>
-                  <input
+                  <input 
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Sua senha secreta"
                     className={`w-full bg-slate-900/50 border ${error ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-12 text-white outline-none transition-all font-black tracking-widest`}
                   />
-                  <button
+                  <button 
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
@@ -109,21 +108,21 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
 
               <label className="flex items-center gap-3 cursor-pointer group py-2">
                 <div className="relative">
-                  <input
-                    type="checkbox"
+                  <input 
+                    type="checkbox" 
                     className="peer sr-only"
                     checked={stayLoggedIn}
                     onChange={(e) => setStayLoggedIn(e.target.checked)}
                   />
                   <div className="w-5 h-5 border-2 border-white/20 rounded-md bg-transparent peer-checked:bg-blue-600 peer-checked:border-blue-600 transition-all flex items-center justify-center">
-                    <CheckCircle2 size={12} className="text-white opacity-0 peer-checked:opacity-100 transition-opacity" />
+                     <CheckCircle2 size={12} className="text-white opacity-0 peer-checked:opacity-100 transition-opacity" />
                   </div>
                 </div>
                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-300 transition-colors">Manter logado neste dispositivo</span>
               </label>
             </div>
 
-            <button
+            <button 
               type="submit"
               className="w-full py-5 rounded-2xl text-sm font-black uppercase tracking-[0.2em] transition-all duration-300 shadow-xl flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-500 shadow-blue-600/20 active:scale-95"
             >

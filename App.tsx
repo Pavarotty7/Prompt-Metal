@@ -152,7 +152,8 @@ const App: React.FC = () => {
     const initializeData = async () => {
       const savedRole = (localStorage.getItem(APP_STORAGE_KEYS.ROLE) || sessionStorage.getItem(APP_STORAGE_KEYS.SESSION_ROLE)) as UserRole;
       const savedUserId = (localStorage.getItem(APP_STORAGE_KEYS.USER_ID) || sessionStorage.getItem(APP_STORAGE_KEYS.SESSION_USER_ID) || '').trim().toLowerCase();
-      const emailAllowed = !savedUserId || isEmailAllowed(savedUserId);
+      const isEmailLikeUserId = savedUserId.includes('@');
+      const emailAllowed = !savedUserId || !isEmailLikeUserId || isEmailAllowed(savedUserId);
 
       if (!emailAllowed) {
         clearLocalSessionState();

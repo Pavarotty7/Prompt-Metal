@@ -137,18 +137,21 @@ const TeamView: React.FC<TeamViewProps> = ({
     type: 'CLT' as Employee['type'], 
     category: 'Operational' as Employee['category'], 
     allocation: '', // Valor do select (id|type)
-    baseRate: '' 
+    baseRate: '',
+    monthlySalary: ''
   });
   
   const [deptForm, setDeptForm] = useState({ id: '', title: '', responsible: '' });
   const [ceoForm, setCeoForm] = useState({ id: '', name: '', role: '', description: '' });
   const [proForm, setProForm] = useState({ name: '', role: '', description: '' });
 
-  const filteredEmployees = useMemo(() => employees.filter(e => 
-    e.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    e.role.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    e.nif?.includes(searchTerm)
-  ), [employees, searchTerm]);
+  const filteredEmployees = useMemo(() => employees
+    .filter(e => 
+      e.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      e.role.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      e.nif?.includes(searchTerm)
+    )
+    .sort((a, b) => a.name.localeCompare(b.name)), [employees, searchTerm]);
   
   const filteredDepartments = useMemo(() => {
     if (!searchTerm) return departments;
@@ -182,7 +185,8 @@ const TeamView: React.FC<TeamViewProps> = ({
         category: empForm.category,
         allocationId: allocId || '',
         allocationType: (allocType as any) || 'department',
-        baseRate: parseFloat(empForm.baseRate) || 0
+        baseRate: parseFloat(empForm.baseRate) || 0,
+        monthlySalary: parseFloat(empForm.monthlySalary) || 0
       };
       // We need onUpdateEmployee prop
       if (onUpdateEmployee) onUpdateEmployee(updatedEmp);
@@ -196,13 +200,14 @@ const TeamView: React.FC<TeamViewProps> = ({
         category: empForm.category, 
         allocationId: allocId || '', 
         allocationType: (allocType as any) || 'department',
-        baseRate: parseFloat(empForm.baseRate) || 0 
+        baseRate: parseFloat(empForm.baseRate) || 0,
+        monthlySalary: parseFloat(empForm.monthlySalary) || 0
       };
       onAddEmployee(newEmp);
     }
     
     setIsEmployeeModalOpen(false);
-    setEmpForm({ id: '', name: '', nif: '', role: '', type: 'CLT', category: 'Operational', allocation: '', baseRate: '' });
+    setEmpForm({ id: '', name: '', nif: '', role: '', type: 'CLT', category: 'Operational', allocation: '', baseRate: '', monthlySalary: '' });
   };
 
   const getAllocationLabel = (emp: Employee) => {
@@ -465,7 +470,8 @@ const TeamView: React.FC<TeamViewProps> = ({
                                           type: 'CLT',
                                           category: 'Administrative',
                                           allocation: `${dept.id}|department`,
-                                          baseRate: ''
+                                          baseRate: '',
+                                          monthlySalary: ''
                                         });
                                         setIsEmployeeModalOpen(true);
                                       }}
@@ -495,7 +501,8 @@ const TeamView: React.FC<TeamViewProps> = ({
                                                   type: emp.type,
                                                   category: emp.category,
                                                   allocation: `${emp.allocationId}|${emp.allocationType}`,
-                                                  baseRate: emp.baseRate?.toString() || ''
+                                                  baseRate: emp.baseRate?.toString() || '',
+                                                  monthlySalary: emp.monthlySalary?.toString() || ''
                                                 });
                                                 setIsEmployeeModalOpen(true);
                                               }}
@@ -567,8 +574,19 @@ const TeamView: React.FC<TeamViewProps> = ({
                     <div>
                        <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Salário Base Mensal (€)</label>
                        <div className="relative">
-                          <Banknote className="absolute left-6 top-5 text-slate-400" size={20} />
-                          <input required type="number" step="0.01" className="w-full pl-14 pr-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-600" value={empForm.baseRate} onChange={e => setEmpForm({...empForm, baseRate: e.target.value})} placeholder="0.00" />
+                          <Banknote className="absolute left-6 top-5 text-emerald-600" size={20} />
+                          <input required type="number" step="0.01" className="w-full pl-14 pr-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-600" value={empForm.monthlySalary} onChange={e => {
+                            const val = e.target.value;
+                            const hourly = val ? (parseFloat(val) / 22 / 8).toFixed(2) : '';
+                            setEmpForm({...empForm, monthlySalary: val, baseRate: hourly});
+                          }} placeholder="0.00" />
+                       </div>
+                    </div>
+                    <div>
+                       <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Valor Hora (€)</label>
+                       <div className="relative">
+                          <Clock className="absolute left-6 top-5 text-slate-400" size={20} />
+                          <input type="number" step="0.01" className="w-full pl-14 pr-6 py-5 bg-slate-50 border-2 border-slate-200 rounded-[1.5rem] text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-slate-900" value={empForm.baseRate} onChange={e => setEmpForm({...empForm, baseRate: e.target.value})} placeholder="0.00" />
                        </div>
                     </div>
                     <div className="col-span-1 md:col-span-2">
