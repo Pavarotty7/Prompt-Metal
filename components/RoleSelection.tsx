@@ -87,6 +87,24 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
   const handleGoogleLogin = async () => {
     setErrorMessage('');
 
+    const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+    const fetchAuthenticatedUser = async () => {
+      const maxAttempts = 5;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const response = await fetch('/api/auth/google/user', { credentials: 'include' });
+        if (response.ok) return response;
+
+        const isRetryable401 = response.status === 401 && attempt < maxAttempts;
+        if (!isRetryable401) return response;
+
+        await wait(250);
+      }
+
+      return fetch('/api/auth/google/user', { credentials: 'include' });
+    };
+
     try {
       setIsLoading(true);
 
@@ -108,29 +126,40 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
         return;
       }
 
-      const authResult = await new Promise<'success' | 'error'>((resolve) => {
-        const timeout = window.setTimeout(() => {
+      const authResult = await new Promise<{ status: 'success' | 'error'; message?: string }>((resolve) => {
+        let settled = false;
+
+        const finish = (status: 'success' | 'error', message?: string) => {
+          if (settled) return;
+          settled = true;
           cleanup();
-          resolve('error');
+          resolve({ status, message });
+        };
+
+        const timeout = window.setTimeout(() => {
+          finish('error', 'Tempo limite excedido no login Google. Tente novamente.');
         }, 120000);
 
         const interval = window.setInterval(() => {
-          if (popup.closed) {
-            cleanup();
-            resolve('error');
+          try {
+            if (popup.closed) {
+              window.setTimeout(() => {
+                finish('error', 'Janela de autenticação fechada antes da confirmação.');
+              }, 250);
+            }
+          } catch {
+            // Ignora erro de COOP enquanto a janela estiver em origem diferente (Google).
           }
         }, 500);
 
         const onMessage = (event: MessageEvent) => {
-          if (event.source !== popup) return;
+          if (event.origin !== window.location.origin) return;
 
           const data = event.data || {};
           if (data?.type === 'OAUTH_AUTH_SUCCESS') {
-            cleanup();
-            resolve('success');
+            finish('success');
           } else if (data?.type === 'OAUTH_AUTH_ERROR') {
-            cleanup();
-            resolve('error');
+            finish('error', String(data?.message || '').trim() || 'Falha no login com Google.');
           }
         };
 
@@ -144,12 +173,12 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
         window.addEventListener('message', onMessage);
       });
 
-      if (authResult !== 'success') {
-        setErrorMessage('Falha no login com Google. Tente novamente.');
+      if (authResult.status !== 'success') {
+        setErrorMessage(authResult.message || 'Falha no login com Google. Tente novamente.');
         return;
       }
 
-      const userResponse = await fetch('/api/auth/google/user', { credentials: 'include' });
+      const userResponse = await fetchAuthenticatedUser();
       if (!userResponse.ok) {
         let backendError = '';
         try {

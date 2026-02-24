@@ -26,9 +26,11 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 const SCOPES = [
+    "openid",
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/drive.metadata.readonly",
     "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
 ];
 
 function requireOAuthEnv(res) {
@@ -46,8 +48,12 @@ function getDriveClient(refreshToken) {
     return google.drive({ version: "v3", auth: oauth2Client });
 }
 
-async function getAuthenticatedUserEmail(refreshToken) {
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
+async function getAuthenticatedUserEmail(refreshToken, accessToken) {
+    oauth2Client.setCredentials(
+        refreshToken
+            ? { refresh_token: refreshToken }
+            : { access_token: accessToken }
+    );
     const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
     const { data } = await oauth2.userinfo.get();
 
@@ -64,8 +70,9 @@ function normalizeUserId(value) {
 
 async function resolveFirestoreUserId(req) {
     const refreshToken = req.cookies.google_refresh_token;
-    if (refreshToken) {
-        return await getAuthenticatedUserEmail(refreshToken);
+    const accessToken = req.cookies.google_access_token;
+    if (refreshToken || accessToken) {
+        return await getAuthenticatedUserEmail(refreshToken, accessToken);
     }
 
     const fallbackUserId = normalizeUserId(req.body?.userId || req.query?.userId);
@@ -83,6 +90,21 @@ function cookieOptions() {
         sameSite: IS_HTTPS_APP ? "none" : "lax",
         path: "/",
         maxAge: 30 * 24 * 60 * 60 * 1000,
+    };
+}
+
+function accessTokenCookieOptions(expiresAtMs) {
+    const now = Date.now();
+    const maxAge = Number(expiresAtMs)
+        ? Math.max(60 * 1000, Number(expiresAtMs) - now)
+        : 60 * 60 * 1000;
+
+    return {
+        httpOnly: true,
+        secure: IS_HTTPS_APP,
+        sameSite: IS_HTTPS_APP ? "none" : "lax",
+        path: "/",
+        maxAge,
     };
 }
 
@@ -109,25 +131,31 @@ app.get("/auth/google/callback", async (req, res) => {
     try {
         const { tokens } = await oauth2Client.getToken(code);
 
-        if (!tokens.refresh_token) {
+        if (tokens.access_token) {
+            res.cookie("google_access_token", tokens.access_token, accessTokenCookieOptions(tokens.expiry_date));
+        }
+
+        if (tokens.refresh_token) {
+            res.cookie("google_refresh_token", tokens.refresh_token, cookieOptions());
+        }
+
+        if (!tokens.refresh_token && !tokens.access_token) {
             return res.send(`
             <html>
                 <body>
                     <script>
                         if (window.opener) {
-                            window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', message: 'Google não retornou refresh token. Remova o acesso do app em myaccount.google.com/permissions e tente conectar novamente.' }, '*');
+                            window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', message: 'Google não retornou token de autenticação.' }, '*');
                             window.close();
                         } else {
                             window.location.href = '/';
                         }
                     </script>
-                    <p>Falha ao concluir autenticação. O Google não retornou refresh token.</p>
+                    <p>Falha ao concluir autenticação. O Google não retornou token.</p>
                 </body>
             </html>
         `);
         }
-
-        res.cookie("google_refresh_token", tokens.refresh_token, cookieOptions());
 
         res.send(`
       <html>
@@ -146,33 +174,55 @@ app.get("/auth/google/callback", async (req, res) => {
     `);
     } catch (error) {
         console.error("Error exchanging code for tokens:", error);
-        res.status(500).send("Erro na autenticação.");
+        res.status(500).send(`
+            <html>
+                <body>
+                    <script>
+                        if (window.opener) {
+                            window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', message: 'Erro na autenticação com Google.' }, '*');
+                            window.close();
+                        } else {
+                            window.location.href = '/';
+                        }
+                    </script>
+                    <p>Falha na autenticação. Feche esta janela e tente novamente.</p>
+                </body>
+            </html>
+        `);
     }
 });
 
 app.get("/api/auth/google/status", (req, res) => {
     const refreshToken = req.cookies.google_refresh_token;
-    const connected = !!refreshToken;
+    const accessToken = req.cookies.google_access_token;
+    const connected = !!(refreshToken || accessToken);
     res.json({ connected, isAuthenticated: connected });
 });
 
 app.get("/api/auth/google/user", async (req, res) => {
     const refreshToken = req.cookies.google_refresh_token;
-    if (!refreshToken) {
-        return res.status(401).json({ error: "Not connected" });
+    const accessToken = req.cookies.google_access_token;
+    if (!refreshToken && !accessToken) {
+        return res.status(401).json({ error: "Sessão Google não encontrada" });
     }
 
     try {
-        const email = await getAuthenticatedUserEmail(refreshToken);
+        const email = await getAuthenticatedUserEmail(refreshToken, accessToken);
         res.json({ connected: true, email });
     } catch (error) {
         console.error("User info error:", error);
-        res.status(500).json({ error: "Erro ao obter usuário autenticado" });
+        res.status(500).json({ error: "Não foi possível obter dados do usuário Google" });
     }
 });
 
 app.post("/api/auth/google/logout", (req, res) => {
     res.clearCookie("google_refresh_token", {
+        httpOnly: true,
+        secure: IS_HTTPS_APP,
+        sameSite: IS_HTTPS_APP ? "none" : "lax",
+        path: "/",
+    });
+    res.clearCookie("google_access_token", {
         httpOnly: true,
         secure: IS_HTTPS_APP,
         sameSite: IS_HTTPS_APP ? "none" : "lax",
