@@ -68,12 +68,14 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
           <form onSubmit={handleLogin} className="space-y-5 animate-fade-in">
             <div className="space-y-4">
               <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Usuário / Login</label>
+                <label htmlFor="login-username" className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Usuário / Login</label>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors">
                     <User size={18} />
                   </div>
                   <input
+                    id="login-username"
+                    name="username"
                     autoFocus
                     type="text"
                     value={username}
@@ -82,6 +84,7 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
                       if (error) setError(false);
                     }}
                     placeholder="Seu nome de usuário"
+                    autoComplete="username"
                     className={`w-full bg-slate-900/50 border ${error ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-4 text-white outline-none transition-all font-black tracking-widest`}
                     required
                   />
@@ -89,12 +92,14 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
               </div>
 
               <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Senha de Acesso</label>
+                <label htmlFor="login-password" className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-widest pl-1">Senha de Acesso</label>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors">
                     <Lock size={18} />
                   </div>
                   <input
+                    id="login-password"
+                    name="password"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => {
@@ -102,6 +107,7 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
                       if (error) setError(false);
                     }}
                     placeholder="Sua senha secreta"
+                    autoComplete="current-password"
                     className={`w-full bg-slate-900/50 border ${error ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 focus:border-blue-500'} rounded-2xl py-4 pl-12 pr-12 text-white outline-none transition-all font-black tracking-widest`}
                     required
                   />
@@ -119,6 +125,8 @@ const RoleSelection: React.FC<RoleSelectionProps> = ({ onSelect }) => {
               <label className="flex items-center gap-3 cursor-pointer group py-2">
                 <div className="relative">
                   <input
+                    id="login-stay-logged"
+                    name="stayLoggedIn"
                     type="checkbox"
                     className="peer sr-only"
                     checked={stayLoggedIn}
