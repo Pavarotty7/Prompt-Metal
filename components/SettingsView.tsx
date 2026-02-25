@@ -79,18 +79,25 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
     setIsBackingUp(true);
     try {
       const data = databaseService.getAllData();
+      
+      // Fetch files for full backup
+      const filesRes = await fetch('/api/backup/files');
+      const { files } = await filesRes.json();
+      
+      const fullData = { ...data, _files: files };
+
       const res = await fetch('/api/drive/backup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          data,
-          filename: `promptmetal_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+          data: fullData,
+          filename: `promptmetal_full_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
         })
       });
       const result = await res.json();
       if (result.success) {
         setDriveHistory(result.history);
-        alert("Backup realizado com sucesso no Google Drive!");
+        alert("Backup completo (incluindo imagens) realizado com sucesso no Google Drive!");
       }
     } catch (error) {
       console.error("Backup error:", error);
@@ -100,17 +107,29 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
     }
   };
 
-  const handleExportBackup = () => {
-    const data = databaseService.getAllData();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `promptmetal_backup_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const handleExportBackup = async () => {
+    try {
+      const data = databaseService.getAllData();
+      
+      // Fetch files for full backup
+      const filesRes = await fetch('/api/backup/files');
+      const { files } = await filesRes.json();
+      
+      const fullData = { ...data, _files: files };
+
+      const blob = new Blob([JSON.stringify(fullData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `promptmetal_full_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Export error:", error);
+      alert("Erro ao exportar backup.");
+    }
   };
 
   const handleImportBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,15 +137,26 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onImportSuccess }) => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const content = e.target?.result as string;
         const data = JSON.parse(content);
         
-        if (confirm("Isso irá substituir todos os dados atuais. Deseja continuar?")) {
+        if (confirm("Isso irá substituir todos os dados atuais e restaurar as imagens. Deseja continuar?")) {
+          // Restore database
           databaseService.importAllData(data);
+          
+          // Restore files if present
+          if (data._files && Array.isArray(data._files)) {
+            await fetch('/api/backup/restore-files', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ files: data._files })
+            });
+          }
+
           onImportSuccess();
-          alert("Backup importado com sucesso!");
+          alert("Backup e imagens restaurados com sucesso!");
         }
       } catch (error) {
         console.error("Erro ao importar backup:", error);

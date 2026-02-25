@@ -1,72 +1,40 @@
-import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import { google } from "googleapis";
 import cookieParser from "cookie-parser";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
-const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
-const isProduction = process.env.NODE_ENV === "production";
+const PORT = 3000;
 
-app.set("trust proxy", 1);
-
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '200mb' }));
 app.use(cookieParser());
 
-const isHttpsRequest = (req: express.Request) => {
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-  if (forwardedProto) return forwardedProto === 'https';
-  return Boolean(req.secure || isProduction);
-};
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
+app.use("/uploads", express.static(uploadsDir));
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  `${APP_URL}/auth/google/callback`
+  `${process.env.APP_URL}/auth/google/callback`
 );
 
 const SCOPES = [
-  'openid',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.metadata.readonly'
 ];
 
-const createAuthorizedOAuthClient = (refreshToken?: string, accessToken?: string) => {
-  const client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    `${APP_URL}/auth/google/callback`
-  );
-
-  if (refreshToken) {
-    client.setCredentials({ refresh_token: refreshToken });
-    return client;
-  }
-
-  if (accessToken) {
-    client.setCredentials({ access_token: accessToken });
-    return client;
-  }
-
-  return null;
-};
-
 // Auth Routes
 app.get("/api/auth/google/url", (req, res) => {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    return res.status(500).json({
-      error: "Google OAuth não configurado. Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET."
-    });
-  }
-
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
@@ -79,29 +47,13 @@ app.get("/auth/google/callback", async (req, res) => {
   const { code } = req.query;
   try {
     const { tokens } = await oauth2Client.getToken(code as string);
-
-    const secureCookie = isHttpsRequest(req);
-    const cookieOptions = {
-      httpOnly: true,
-      secure: secureCookie,
-      sameSite: 'lax' as const,
-    };
-
-    if (tokens.access_token) {
-      const expiresInMs = Number(tokens.expiry_date)
-        ? Math.max(60_000, Number(tokens.expiry_date) - Date.now())
-        : 60 * 60 * 1000;
-
-      res.cookie('google_access_token', tokens.access_token, {
-        ...cookieOptions,
-        maxAge: expiresInMs,
-      });
-    }
-
+    
     // Store refresh token in a secure cookie
     if (tokens.refresh_token) {
       res.cookie('google_refresh_token', tokens.refresh_token, {
-        ...cookieOptions,
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
     }
@@ -123,70 +75,19 @@ app.get("/auth/google/callback", async (req, res) => {
     `);
   } catch (error) {
     console.error("Error exchanging code for tokens:", error);
-    res.status(500).send(`
-      <html>
-        <body>
-          <script>
-            if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', message: 'Erro na autenticação com Google.' }, '*');
-              window.close();
-            } else {
-              window.location.href = '/';
-            }
-          </script>
-          <p>Falha na autenticação. Feche esta janela e tente novamente.</p>
-        </body>
-      </html>
-    `);
+    res.status(500).send("Erro na autenticação.");
   }
 });
 
 app.get("/api/auth/google/status", (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  const accessToken = req.cookies.google_access_token;
-  const connected = !!(refreshToken || accessToken);
-  res.json({ connected, isAuthenticated: connected });
-});
-
-app.get("/api/auth/google/user", async (req, res) => {
-  const refreshToken = req.cookies.google_refresh_token;
-  const accessToken = req.cookies.google_access_token;
-
-  if (!refreshToken && !accessToken) {
-    return res.status(401).json({ error: "Sessão Google não encontrada" });
-  }
-
-  try {
-    const authClient = createAuthorizedOAuthClient(refreshToken, accessToken);
-    if (!authClient) {
-      return res.status(401).json({ error: "Sessão Google não encontrada" });
-    }
-
-    const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
-    const { data } = await oauth2.userinfo.get();
-
-    const email = String(data?.email || '').trim().toLowerCase();
-    if (!email) {
-      return res.status(404).json({ error: "E-mail da conta Google não disponível" });
-    }
-
-    res.json({ email, name: data?.name || null, picture: data?.picture || null });
-  } catch (error) {
-    console.error("Erro ao obter dados do usuário Google:", error);
-    res.status(500).json({ error: "Não foi possível obter dados do usuário Google" });
-  }
+  res.json({ connected: !!refreshToken });
 });
 
 app.post("/api/auth/google/logout", (req, res) => {
-  const secureCookie = isHttpsRequest(req);
-
   res.clearCookie('google_refresh_token', {
-    secure: secureCookie,
-    sameSite: 'lax'
-  });
-  res.clearCookie('google_access_token', {
-    secure: secureCookie,
-    sameSite: 'lax'
+    secure: true,
+    sameSite: 'none'
   });
   res.json({ success: true });
 });
@@ -194,12 +95,11 @@ app.post("/api/auth/google/logout", (req, res) => {
 // Google Drive Backup Routes
 app.post("/api/drive/backup", async (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  const accessToken = req.cookies.google_access_token;
-  const authClient = createAuthorizedOAuthClient(refreshToken, accessToken);
-  if (!authClient) return res.status(401).json({ error: "Not connected to Google Drive" });
+  if (!refreshToken) return res.status(401).json({ error: "Not connected to Google Drive" });
 
   try {
-    const drive = google.drive({ version: 'v3', auth: authClient });
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
     const { data, filename } = req.body;
 
@@ -263,12 +163,11 @@ app.post("/api/drive/backup", async (req, res) => {
 
 app.post("/api/drive/upload-file", async (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  const accessToken = req.cookies.google_access_token;
-  const authClient = createAuthorizedOAuthClient(refreshToken, accessToken);
-  if (!authClient) return res.status(401).json({ error: "Not connected" });
+  if (!refreshToken) return res.status(401).json({ error: "Not connected" });
 
   try {
-    const drive = google.drive({ version: 'v3', auth: authClient });
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
     const { name, mimeType, content, folderName = 'PromptMetal Documents' } = req.body;
 
@@ -311,12 +210,11 @@ app.post("/api/drive/upload-file", async (req, res) => {
 
 app.get("/api/drive/history", async (req, res) => {
   const refreshToken = req.cookies.google_refresh_token;
-  const accessToken = req.cookies.google_access_token;
-  const authClient = createAuthorizedOAuthClient(refreshToken, accessToken);
-  if (!authClient) return res.status(401).json({ error: "Not connected" });
+  if (!refreshToken) return res.status(401).json({ error: "Not connected" });
 
   try {
-    const drive = google.drive({ version: 'v3', auth: authClient });
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
     const folderSearch = await drive.files.list({
       q: "name = 'PromptMetal Backups' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
@@ -337,6 +235,61 @@ app.get("/api/drive/history", async (req, res) => {
     res.json({ history: backupsList.data.files?.slice(0, 3) || [] });
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar histórico" });
+  }
+});
+
+app.post("/api/upload", (req, res) => {
+  try {
+    const { name, content, mimeType } = req.body;
+    if (!name || !content) {
+      return res.status(400).json({ error: "Missing file name or content" });
+    }
+
+    const fileName = `${Date.now()}_${name.replace(/\s+/g, '_')}`;
+    const filePath = path.join(uploadsDir, fileName);
+    const buffer = Buffer.from(content, 'base64');
+
+    fs.writeFileSync(filePath, buffer);
+
+    const fileUrl = `${process.env.APP_URL || `http://localhost:${PORT}`}/uploads/${fileName}`;
+    res.json({ success: true, url: fileUrl, fileName });
+  } catch (error) {
+    console.error("Local upload error:", error);
+    res.status(500).json({ error: "Erro ao salvar arquivo localmente" });
+  }
+});
+
+// Full Backup Endpoints (including files)
+app.get("/api/backup/files", (req, res) => {
+  try {
+    const files = fs.readdirSync(uploadsDir);
+    const filesData = files.map(file => {
+      const filePath = path.join(uploadsDir, file);
+      const content = fs.readFileSync(filePath, { encoding: 'base64' });
+      return { name: file, content };
+    });
+    res.json({ files: filesData });
+  } catch (error) {
+    console.error("Error reading files for backup:", error);
+    res.status(500).json({ error: "Erro ao ler arquivos para backup" });
+  }
+});
+
+app.post("/api/backup/restore-files", (req, res) => {
+  try {
+    const { files } = req.body; // Array of { name, content }
+    if (!Array.isArray(files)) return res.status(400).json({ error: "Invalid files data" });
+
+    files.forEach(file => {
+      const filePath = path.join(uploadsDir, file.name);
+      const buffer = Buffer.from(file.content, 'base64');
+      fs.writeFileSync(filePath, buffer);
+    });
+
+    res.json({ success: true, count: files.length });
+  } catch (error) {
+    console.error("Error restoring files:", error);
+    res.status(500).json({ error: "Erro ao restaurar arquivos" });
   }
 });
 

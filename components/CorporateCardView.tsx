@@ -173,6 +173,7 @@ const CorporateCardView: React.FC<CorporateCardViewProps> = ({ employees, onUpda
 
   const handleUpdateHolder = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('handleUpdateHolder called');
     if (!isAdmin || !onUpdateEmployee) return;
     const target = employees.find(emp => emp.id === cardFormData.employeeId);
     if (target) {
@@ -505,6 +506,44 @@ const CorporateCardView: React.FC<CorporateCardViewProps> = ({ employees, onUpda
                  <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
                     <button type="button" onClick={() => setIsNewHolderModalOpen(false)} className="px-6 py-3 text-slate-400 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
                     <button type="submit" className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl hover:bg-black active:scale-95 transition-all">Ativar Cartão</button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {isEditCardModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[160] flex items-center justify-center p-4">
+           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border border-white/20 animate-scale-in">
+              <div className="bg-slate-900 p-8 flex justify-between items-center">
+                 <h3 className="text-2xl font-black text-white uppercase tracking-tighter flex items-center gap-3"><Edit size={24} className="text-amber-500" /> Editar Cartão</h3>
+                 <button onClick={() => setIsEditCardModalOpen(false)} className="bg-white/10 p-2 rounded-full text-white hover:bg-white/20 transition-all"><X size={24} /></button>
+              </div>
+              <form onSubmit={handleUpdateHolder} className="p-8 space-y-6">
+                 <div>
+                    <label className="block text-[10px] font-black text-black uppercase mb-2 tracking-widest">Portador</label>
+                    <input type="text" disabled className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-2xl text-sm font-black uppercase outline-none focus:ring-2 focus:ring-slate-800 text-black" value={cardFormData.name} />
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <label className="block text-[10px] font-black text-black uppercase mb-2 tracking-widest">Limite Mensal (€)</label>
+                       <input type="number" required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-emerald-600 outline-none" value={cardFormData.cardLimit} onChange={e => setCardFormData({...cardFormData, cardLimit: Number(e.target.value)})} />
+                    </div>
+                    <div>
+                       <label className="block text-[10px] font-black text-black uppercase mb-2 tracking-widest">Final do Cartão (4 Dígitos)</label>
+                       <input type="text" maxLength={4} required className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black outline-none text-black" value={cardFormData.cardLast4} onChange={e => setCardFormData({...cardFormData, cardLast4: e.target.value})} placeholder="0000" />
+                    </div>
+                 </div>
+                 <div>
+                    <label className="block text-[10px] font-black text-black uppercase mb-2 tracking-widest">Data de Validade</label>
+                    <div className="relative">
+                      <Calendar className="absolute left-4 top-3 text-black" size={18} />
+                      <input type="date" required className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black outline-none text-black" value={cardFormData.cardExpiry} onChange={e => setCardFormData({...cardFormData, cardExpiry: e.target.value})} />
+                    </div>
+                 </div>
+                 <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
+                    <button type="button" onClick={() => setIsEditCardModalOpen(false)} className="px-6 py-3 text-slate-400 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                    <button type="submit" className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl hover:bg-black active:scale-95 transition-all">Atualizar Cartão</button>
                  </div>
               </form>
            </div>

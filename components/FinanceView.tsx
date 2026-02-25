@@ -29,6 +29,8 @@ import {
   Calendar
 } from 'lucide-react';
 
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
 interface FinanceViewProps {
   transactions: Transaction[];
   projects?: Project[];
@@ -63,7 +65,7 @@ const FinanceView: React.FC<FinanceViewProps> = ({
     type: 'income' as 'income' | 'expense',
     dueDate: '',
     amount: '',
-    status: 'Pendente' as 'Pago' | 'Pendente',
+    status: 'Pendente' as 'Pago' | 'Pendente' | 'Falta Fatura',
     notes: ''
   });
 
@@ -217,6 +219,28 @@ const FinanceView: React.FC<FinanceViewProps> = ({
     return { income: inc, expense: exp, balance: inc - exp };
   }, [transactions]);
 
+  const cashflowData = useMemo(() => {
+    const monthlyData: {[key: string]: {income: number, expense: number}} = {};
+
+    transactions.forEach(t => {
+      const month = new Date(t.date).toLocaleString('default', { month: 'short', year: '2-digit' });
+      if (!monthlyData[month]) {
+        monthlyData[month] = { income: 0, expense: 0 };
+      }
+      if (t.type === 'income') {
+        monthlyData[month].income += t.amount;
+      } else {
+        monthlyData[month].expense += t.amount;
+      }
+    });
+
+    return Object.keys(monthlyData).map(month => ({
+      month,
+      Receitas: monthlyData[month].income,
+      Despesas: monthlyData[month].expense,
+    })).reverse();
+  }, [transactions]);
+
   return (
     <div className="space-y-6 animate-fade-in pb-10">
       <div>
@@ -276,30 +300,35 @@ const FinanceView: React.FC<FinanceViewProps> = ({
       </div>
 
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
-          <div className="lg:col-span-1 space-y-6">
-            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
-              <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] mb-6">Consolidado do Período</h3>
-              <div className="space-y-4">
-                {(filter === 'all' || filter === 'income') && (
-                  <div className="flex justify-between items-center p-4 bg-emerald-100 border border-emerald-300 rounded-2xl">
-                    <div className="flex items-center gap-3"><ArrowUpCircle className="text-emerald-800" size={24} /><span className="text-emerald-950 font-black text-xs uppercase tracking-widest">Receitas</span></div>
-                    <span className="text-emerald-900 font-black text-lg">€ {stats.income.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</span>
-                  </div>
-                )}
-                {(filter === 'all' || filter === 'expense') && (
-                  <div className="flex justify-between items-center p-4 bg-red-100 border border-red-300 rounded-2xl">
-                    <div className="flex items-center gap-3"><ArrowDownCircle className="text-red-800" size={24} /><span className="text-red-950 font-black text-xs uppercase tracking-widest">Despesas</span></div>
-                    <span className="text-red-900 font-black text-lg">€ {stats.expense.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</span>
-                  </div>
-                )}
-                <div className="pt-6 border-t border-slate-200 flex justify-between items-center px-2">
-                  <span className="text-slate-900 font-black text-[10px] uppercase tracking-widest">Saldo Líquido</span>
-                  <span className={`font-black text-2xl ${stats.balance >= 0 ? 'text-blue-800' : 'text-red-800'}`}>
-                    € {stats.balance.toLocaleString('pt-PT', {minimumFractionDigits: 2})}
-                  </span>
-                </div>
+        <div className="space-y-8 animate-fade-in">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-gradient-to-br from-emerald-500 to-green-600 text-white p-6 rounded-3xl shadow-2xl shadow-emerald-500/30">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-black text-sm uppercase tracking-wider">Receitas</h3>
+                <ArrowUpCircle size={28} className="opacity-50" />
               </div>
+              <p className="text-4xl font-black">€{stats.income.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
+            </div>
+            <div className="bg-gradient-to-br from-red-500 to-rose-600 text-white p-6 rounded-3xl shadow-2xl shadow-red-500/30">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-black text-sm uppercase tracking-wider">Despesas</h3>
+                <ArrowDownCircle size={28} className="opacity-50" />
+              </div>
+              <p className="text-4xl font-black">€{stats.expense.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
+            </div>
+            <div className={`bg-gradient-to-br ${stats.balance >= 0 ? 'from-blue-500 to-indigo-600' : 'from-gray-500 to-slate-600'} text-white p-6 rounded-3xl shadow-2xl ${stats.balance >= 0 ? 'shadow-blue-500/30' : 'shadow-slate-500/30'}`}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-black text-sm uppercase tracking-wider">Saldo Líquido</h3>
+                <Activity size={28} className="opacity-50" />
+              </div>
+              <p className="text-4xl font-black">€{stats.balance.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-lg border border-slate-200 flex flex-col justify-center items-center">
+                <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center border-4 border-amber-200 mb-3">
+                    <AlertTriangle size={32} className="text-amber-600"/>
+                </div>
+                <h3 className="text-amber-900 font-black text-sm uppercase tracking-wider">Pendente</h3>
+                <p className="text-slate-900 text-2xl font-black">€{transactions.filter(t => t.status === 'Pendente').reduce((acc, t) => acc + (t.type === 'income' ? t.amount : -t.amount), 0).toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
             </div>
           </div>
 
@@ -317,7 +346,7 @@ const FinanceView: React.FC<FinanceViewProps> = ({
                 />
               </div>
             </div>
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto max-h-[60vh]">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-100 sticky top-0 z-10 border-b border-slate-300">
                   <tr>
@@ -378,6 +407,36 @@ const FinanceView: React.FC<FinanceViewProps> = ({
         </div>
       )}
 
+      {activeTab === 'cashflow' && (
+        <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200 animate-fade-in">
+          <h3 className="font-black text-slate-900 uppercase tracking-tighter text-lg mb-6">Análise Mensal de Entradas e Saídas</h3>
+          <div style={{width: '100%', height: 400}}>
+            <ResponsiveContainer>
+              <BarChart data={cashflowData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
+                <XAxis dataKey="month" tick={{fill: '#334155', fontSize: 12, fontWeight: 'bold'}} axisLine={{stroke: '#cbd5e1'}} tickLine={{stroke: '#cbd5e1'}} />
+                <YAxis tick={{fill: '#334155', fontSize: 12, fontWeight: 'bold'}} axisLine={{stroke: '#cbd5e1'}} tickLine={{stroke: '#cbd5e1'}} tickFormatter={(value) => `€${Number(value).toLocaleString('pt-PT')}`} />
+                <Tooltip 
+                  cursor={{fill: 'rgba(241, 245, 249, 0.5)'}}
+                  contentStyle={{ 
+                    background: 'rgba(255, 255, 255, 0.9)',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '1rem',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                    padding: '1rem'
+                  }}
+                  labelStyle={{ fontWeight: 'bold', color: '#0f172a' }}
+                  itemStyle={{ fontWeight: 'bold' }}
+                />
+                <Legend iconType="circle" iconSize={10} wrapperStyle={{fontSize: '12px', fontWeight: 'bold', color: '#475569'}} />
+                <Bar dataKey="Receitas" fill="#10b981" name="Receitas" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="Despesas" fill="#ef4444" name="Despesas" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: NOVO / EDITAR LANÇAMENTO */}
       {isFormOpen && isAdmin && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[100] flex items-center justify-center p-4">
@@ -427,6 +486,13 @@ const FinanceView: React.FC<FinanceViewProps> = ({
                         className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.status === 'Pendente' ? 'bg-amber-600 text-black shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
                       >
                         Pendente
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setFormData({...formData, status: 'Falta Fatura'})} 
+                        className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${formData.status === 'Falta Fatura' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-700 hover:text-slate-900'}`}
+                      >
+                        Falta Fatura
                       </button>
                    </div>
                 </div>
@@ -530,6 +596,27 @@ const FinanceView: React.FC<FinanceViewProps> = ({
                     </p>
                     <p className="text-[9px] text-slate-700 mt-1 uppercase font-bold">PDF, JPG ou PNG (Max 5MB cada)</p>
                   </div>
+                  {attachmentFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {attachmentFiles.map((file, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500">
+                              <Paperclip size={14} />
+                            </div>
+                            <span className="text-[10px] font-black text-slate-900 uppercase truncate max-w-[250px]">{file.name}</span>
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => setAttachmentFiles(prev => prev.filter((_, i) => i !== idx))} 
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="col-span-2">

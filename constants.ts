@@ -63,6 +63,12 @@ export const CONSTRUCTION_STAGES = [
     ]
   },
   {
+    category: 'Serviços Terceirizados',
+    tasks: [
+      'Empreitada'
+    ]
+  },
+  {
     category: 'Entrega da Obra',
     tasks: [
       'Limpeza grossa da obra',

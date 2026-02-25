@@ -19,6 +19,11 @@ export interface BudgetTask {
   status: TaskStatus;
 }
 
+export interface Attachment {
+  name: string;
+  url: string;
+}
+
 export interface ProjectDocument {
   id: string;
   name: string;
@@ -27,6 +32,7 @@ export interface ProjectDocument {
   status: 'Válido' | 'Inválido';
   url?: string;
   fileName: string;
+  attachments?: Attachment[];
 }
 
 export interface MaterialLog {
@@ -40,9 +46,19 @@ export interface MaterialLog {
   supplier: string;
   invoice: string;
   type: 'entrada' | 'saida';
+  category?: 'Material' | 'Serviço Terceirizado';
   notes?: string;
   attachmentName?: string;
   attachmentUrl?: string;
+  attachments?: Attachment[];
+}
+
+export interface LogbookEntry {
+  id: string;
+  date: string;
+  content: string;
+  author: string;
+  attachments?: Attachment[];
 }
 
 export interface Project {
@@ -66,6 +82,7 @@ export interface Project {
   description?: string;
   dataCriacao?: string;
   ownerId?: string;
+  logbook?: LogbookEntry[];
 }
 
 export interface SubTask {
@@ -95,11 +112,12 @@ export interface Transaction {
   category: 'Receita' | 'Material' | 'Mão de Obra' | 'Combustível' | 'Despesa Fixa' | 'Outros';
   amount: number;
   type: 'income' | 'expense';
-  status: 'Pago' | 'Pendente';
+  status: 'Pago' | 'Pendente' | 'Falta Fatura';
   projectId?: string;
   notes?: string;
   attachmentName?: string;
   attachmentUrl?: string;
+  attachments?: Attachment[];
 }
 
 export interface CorporateCardTransaction {
@@ -113,6 +131,7 @@ export interface CorporateCardTransaction {
   receiptAttached: boolean;
   receiptFileName?: string;
   receiptUrl?: string;
+  attachments?: Attachment[];
 }
 
 export interface VehicleDocument {
@@ -123,6 +142,7 @@ export interface VehicleDocument {
   uploadDate: string;
   url?: string;
   fileName?: string;
+  attachments?: Attachment[];
 }
 
 export interface MaintenanceRecord {
@@ -132,6 +152,7 @@ export interface MaintenanceRecord {
   cost: number;
   description: string;
   receiptUrl?: string;
+  attachments?: Attachment[];
 }
 
 export interface FuelLog {
@@ -143,6 +164,7 @@ export interface FuelLog {
   receiptUrl?: string;
   receiptFileName?: string;
   vehicleId?: string;
+  attachments?: Attachment[];
 }
 
 export interface Vehicle {
@@ -171,6 +193,7 @@ export interface Employee {
   allocationId: string;
   allocationType: 'project' | 'department';
   baseRate?: number; 
+  monthlySalary?: number;
   hasCorporateCard?: boolean;
   cardLimit?: number;
   cardLast4?: string;
@@ -192,6 +215,7 @@ export interface TimesheetRecord {
   notes?: string;
   totalPay: number; 
   attachment?: string; 
+  attachments?: Attachment[];
 }
 
 export interface DailyNote {

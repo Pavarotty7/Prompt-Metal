@@ -22,11 +22,13 @@ interface SidebarProps {
   onChangeView: (view: ViewState) => void;
   userRole: UserRole;
   onLogout: () => void;
+  isOpen: boolean;
+  setIsOpen: (isOpen: boolean) => void;
 }
 
 const GUEST_ALLOWED_VIEWS: ViewState[] = ['dashboard', 'projects', 'team', 'notes'];
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, onLogout }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, onLogout, isOpen, setIsOpen }) => {
   const menuItems = React.useMemo(() => [
     { id: 'dashboard' as ViewState, label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { id: 'projects' as ViewState, label: 'Obras & Produção', icon: <HardHat size={20} /> },
@@ -47,7 +49,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, 
   [userRole, menuItems]);
 
   return (
-    <div className="h-screen w-64 bg-[#0a101f] text-white flex flex-col fixed left-0 top-0 shadow-xl z-50">
+    <div className={`h-screen w-64 bg-[#0a101f] text-white flex flex-col fixed left-0 top-0 shadow-xl z-50 transform ${isOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out md:translate-x-0`}>
       <div className="p-8 border-b border-slate-800 cursor-pointer flex items-center justify-center gap-1" onClick={() => onChangeView('home')}>
         <span className="text-xl font-black tracking-tighter text-white uppercase">Prompt</span>
         <span className="text-xl font-black tracking-tighter text-amber-500 uppercase">Metal</span>

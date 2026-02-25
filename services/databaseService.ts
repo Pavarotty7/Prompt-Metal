@@ -1,5 +1,5 @@
 
-import { Project, Transaction, Employee, Vehicle, TimesheetRecord, DailyNote, ScheduleTask } from "../types";
+import { Project, Transaction, Employee, Vehicle, TimesheetRecord, DailyNote } from "../types";
 
 const STORAGE_KEYS = {
   PROJECTS: 'pm_projects',
@@ -7,7 +7,6 @@ const STORAGE_KEYS = {
   EMPLOYEES: 'pm_employees',
   VEHICLES: 'pm_vehicles',
   TIMESHEETS: 'pm_timesheets',
-  SCHEDULE_TASKS: 'pm_schedule_tasks',
   NOTES: 'pm_notes'
 };
 
@@ -79,16 +78,6 @@ export const databaseService = {
     setLocal(STORAGE_KEYS.TIMESHEETS, items);
   },
 
-  // Agenda
-  getScheduleTasks: () => getLocal<ScheduleTask>(STORAGE_KEYS.SCHEDULE_TASKS),
-  saveScheduleTask: (task: ScheduleTask) => {
-    const items = getLocal<ScheduleTask>(STORAGE_KEYS.SCHEDULE_TASKS);
-    const index = items.findIndex(i => i.id === task.id);
-    if (index >= 0) items[index] = task;
-    else items.unshift(task);
-    setLocal(STORAGE_KEYS.SCHEDULE_TASKS, items);
-  },
-
   // Notas
   getNotes: () => getLocal<DailyNote>(STORAGE_KEYS.NOTES),
   saveNote: (note: DailyNote) => {
@@ -111,7 +100,6 @@ export const databaseService = {
       employees: getLocal<Employee>(STORAGE_KEYS.EMPLOYEES),
       vehicles: getLocal<Vehicle>(STORAGE_KEYS.VEHICLES),
       timesheets: getLocal<TimesheetRecord>(STORAGE_KEYS.TIMESHEETS),
-      scheduleTasks: getLocal<ScheduleTask>(STORAGE_KEYS.SCHEDULE_TASKS),
       notes: getLocal<DailyNote>(STORAGE_KEYS.NOTES)
     };
   },
@@ -121,7 +109,6 @@ export const databaseService = {
     if (data.employees) setLocal(STORAGE_KEYS.EMPLOYEES, data.employees);
     if (data.vehicles) setLocal(STORAGE_KEYS.VEHICLES, data.vehicles);
     if (data.timesheets) setLocal(STORAGE_KEYS.TIMESHEETS, data.timesheets);
-    if (data.scheduleTasks) setLocal(STORAGE_KEYS.SCHEDULE_TASKS, data.scheduleTasks);
     if (data.notes) setLocal(STORAGE_KEYS.NOTES, data.notes);
   }
 };

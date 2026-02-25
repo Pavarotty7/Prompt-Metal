@@ -132,7 +132,7 @@ const HomeLanding: React.FC<HomeLandingProps> = ({ onNavigate, userRole, project
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
       <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-amber-500/5 rounded-full blur-[120px] translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
 
-      <div className="relative z-10 max-w-7xl w-full flex flex-col items-center">
+      <div className="relative z-10 max-w-[1600px] w-full flex flex-col items-center">
         <header className="w-full flex flex-col md:flex-row justify-between items-center mb-16 gap-8">
           <div className="flex flex-col items-center md:items-start">
             <div className="flex items-center gap-3 mb-2">

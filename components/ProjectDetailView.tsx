@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Project, MaterialLog, UserRole, Employee, ProjectDocument, BudgetTask, ProjectStatus, Attachment } from '../types';
+import { Project, MaterialLog, UserRole, Employee, ProjectDocument, BudgetTask, ProjectStatus, Attachment, Transaction, TimesheetRecord } from '../types';
 import BudgetProgressManager from './BudgetProgressManager';
+import ProjectStatement from './ProjectStatement';
 import { uploadFile } from '../services/fileService';
 import { 
   ArrowLeft, 
@@ -27,7 +28,8 @@ import {
   Truck,
   ListChecks,
   Clock,
-  Pencil
+  Pencil,
+  BookOpen
 } from 'lucide-react';
 
 interface ProjectDetailViewProps {
@@ -36,18 +38,25 @@ interface ProjectDetailViewProps {
   userRole?: UserRole;
   employees?: Employee[];
   onUpdateProject?: (project: Project) => void;
+  transactions?: Transaction[];
+  timesheetRecords?: TimesheetRecord[];
 }
 
-type TabType = 'budget-progress' | 'materials' | 'team' | 'statement' | 'documents';
+type TabType = 'budget-progress' | 'materials' | 'team' | 'documents' | 'statement' | 'logbook';
 
-const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, userRole, employees = [], onUpdateProject }) => {
+const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, userRole, employees = [], onUpdateProject, transactions = [], timesheetRecords = [] }) => {
   const [activeTab, setActiveTab] = useState<TabType>('budget-progress');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedProject, setEditedProject] = useState(project);
+
   const isAdmin = userRole === 'admin';
   const materialFileInputRef = useRef<HTMLInputElement>(null);
   const docFileInputRef = useRef<HTMLInputElement>(null);
+  const logbookFileInputRef = useRef<HTMLInputElement>(null);
 
   const materials = useMemo(() => project.materialLogs || [], [project.materialLogs]);
   const projectDocuments = useMemo(() => project.documents || [], [project.documents]);
+  const logbookEntries = useMemo(() => project.logbook || [], [project.logbook]);
 
   const allocatedTeam = useMemo(() => 
     employees.filter(e => e.allocationId === project.id && e.allocationType === 'project'),
@@ -56,12 +65,14 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [isLogbookModalOpen, setIsLogbookModalOpen] = useState(false);
   const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   
   const [materialForm, setMaterialForm] = useState({
     date: new Date().toISOString().split('T')[0],
     materialName: '',
+    category: 'Material' as 'Material' | 'Serviço Terceirizado',
     quantity: '',
     unit: 'un',
     unitPrice: '',
@@ -75,6 +86,13 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     type: 'Planta' as ProjectDocument['type'],
   });
   const [docAttachments, setDocAttachments] = useState<File[]>([]);
+
+  const [logbookForm, setLogbookForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    content: '',
+    author: project.responsible || ''
+  });
+  const [logbookAttachments, setLogbookAttachments] = useState<File[]>([]);
 
   const [newChecklistItem, setNewChecklistItem] = useState({ text: '', critical: false, deadline: '' });
 
@@ -93,6 +111,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
 
       const materialData = {
         materialName: materialForm.materialName,
+        category: materialForm.category,
         quantity: Number(materialForm.quantity),
         unit: materialForm.unit,
         unitPrice: Number(materialForm.unitPrice),
@@ -103,6 +122,22 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
 
       let updatedMaterialLogs = [...(project.materialLogs || [])];
       let newSpent = project.spent;
+      let updatedTarefas = [...(project.tarefas || [])];
+
+      // Se for Empreitada, adicionar aos progressos se não existir
+      if (materialForm.unit === 'Empreitada') {
+        const taskExists = updatedTarefas.some(t => t.nome === materialForm.materialName);
+        if (!taskExists) {
+          const newTask: BudgetTask = {
+            id: Math.random().toString(36).substr(2, 9),
+            nome: materialForm.materialName,
+            percentualTotal: 0, // Será redistribuído ou mantido como 0 até ajuste manual
+            percentualConcluido: 0,
+            status: 'Planeamento'
+          };
+          updatedTarefas.push(newTask);
+        }
+      }
 
       if (editingMaterialId) {
         const index = updatedMaterialLogs.findIndex(m => m.id === editingMaterialId);
@@ -133,12 +168,22 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
       onUpdateProject({
         ...project,
         materialLogs: updatedMaterialLogs,
-        spent: newSpent
+        spent: newSpent,
+        tarefas: updatedTarefas
       });
 
       setIsMaterialModalOpen(false);
       setEditingMaterialId(null);
-      setMaterialForm({ date: new Date().toISOString().split('T')[0], materialName: '', quantity: '', unit: 'un', unitPrice: '', supplier: '', invoice: '' });
+      setMaterialForm({ 
+        date: new Date().toISOString().split('T')[0], 
+        materialName: '', 
+        category: 'Material',
+        quantity: '', 
+        unit: 'un', 
+        unitPrice: '', 
+        supplier: '', 
+        invoice: '' 
+      });
       setMaterialAttachments([]);
     } catch (error) {
       console.error("Upload error:", error);
@@ -153,6 +198,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     setMaterialForm({
       date: material.date,
       materialName: material.materialName,
+      category: material.category || 'Material',
       quantity: material.quantity.toString(),
       unit: material.unit,
       unitPrice: material.unitPrice.toString(),
@@ -228,6 +274,57 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     }
   };
 
+  const handleSaveLogbookEntry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !onUpdateProject) return;
+
+    setIsUploading(true);
+    try {
+      const newAttachments: Attachment[] = [];
+      for (const file of logbookAttachments) {
+        const { url } = await uploadFile(file);
+        newAttachments.push({ name: file.name, url });
+      }
+
+      const newEntry = {
+        id: Math.random().toString(36).substr(2, 9),
+        date: logbookForm.date,
+        content: logbookForm.content,
+        author: logbookForm.author,
+        attachments: newAttachments
+      };
+
+      onUpdateProject({
+        ...project,
+        logbook: [newEntry, ...(project.logbook || [])]
+      });
+
+      setIsLogbookModalOpen(false);
+      setLogbookForm({
+        date: new Date().toISOString().split('T')[0],
+        content: '',
+        author: project.responsible || ''
+      });
+      setLogbookAttachments([]);
+    } catch (error) {
+      console.error("Logbook upload error:", error);
+      alert("Erro ao salvar registro no livro de obra.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDeleteLogbookEntry = (id: string) => {
+    if (!isAdmin || !onUpdateProject) return;
+    if (!confirm("Confirmar exclusão deste registro do livro de obra?")) return;
+
+    const updatedLogbook = (project.logbook || []).filter(entry => entry.id !== id);
+    onUpdateProject({
+      ...project,
+      logbook: updatedLogbook
+    });
+  };
+
   const handleInvalidateDoc = (id: string) => {
     if (!isAdmin || !onUpdateProject) return;
     if (!confirm("Tem certeza que deseja invalidar este documento técnico?")) return;
@@ -259,13 +356,32 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
     onUpdateProject({ ...project, status: newStatus });
   };
 
+  const handleSaveProjectChanges = () => {
+    if (!onUpdateProject) return;
+    onUpdateProject(editedProject);
+    setIsEditing(false);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in pb-16">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
         <button onClick={onBack} className="flex items-center gap-2 text-slate-800 hover:text-slate-600 font-black uppercase text-[10px] tracking-widest transition-all">
           <ArrowLeft size={16} /> Voltar para Obras
         </button>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+        {isAdmin && (
+          <div className="flex gap-2">
+            {isEditing ? (
+              <button onClick={handleSaveProjectChanges} className="bg-emerald-500 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 flex items-center gap-2 shadow-lg">
+                <Save size={12} /> Salvar Alterações
+              </button>
+            ) : (
+              <button onClick={() => setIsEditing(true)} className="bg-slate-900 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-black flex items-center gap-2 shadow-lg">
+                <Pencil size={12} /> Editar Obra
+              </button>
+            )}
+          </div>
+        )}
           {isAdmin ? (
             <select 
               value={project.status} 
@@ -290,25 +406,56 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
         <div className="p-10 relative z-10 grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-6">
             <div>
-               <h1 className="text-4xl font-black text-slate-900 uppercase tracking-tighter leading-none mb-4">{project.name}</h1>
+               {isEditing ? (
+                 <input 
+                   type="text" 
+                   value={editedProject.name} 
+                   onChange={(e) => setEditedProject({...editedProject, name: e.target.value})} 
+                   className="w-full text-4xl font-black text-slate-900 uppercase tracking-tighter leading-none mb-4 bg-slate-100 p-2 rounded-lg"
+                 />
+               ) : (
+                 <h1 className="text-4xl font-black text-slate-900 uppercase tracking-tighter leading-none mb-4">{project.name}</h1>
+               )}
                <div className="flex flex-wrap gap-4 text-xs font-black text-slate-700 uppercase tracking-widest">
-                  <span className="flex items-center gap-1.5"><User size={14} className="text-slate-900"/> {project.client}</span>
-                  <span className="flex items-center gap-1.5"><MapPin size={14} className="text-slate-900"/> {project.address}</span>
-                  <span className="flex items-center gap-1.5"><HardHat size={14} className="text-slate-900"/> Responsável: {project.responsible}</span>
+                  {isEditing ? (
+                    <>
+                      <input type="text" value={editedProject.client} onChange={(e) => setEditedProject({...editedProject, client: e.target.value})} className="bg-slate-100 p-1 rounded-md" />
+                      <input type="text" value={editedProject.address} onChange={(e) => setEditedProject({...editedProject, address: e.target.value})} className="bg-slate-100 p-1 rounded-md" />
+                      <input type="text" value={editedProject.responsible} onChange={(e) => setEditedProject({...editedProject, responsible: e.target.value})} className="bg-slate-100 p-1 rounded-md" />
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex items-center gap-1.5"><User size={14} className="text-slate-900"/> {project.client}</span>
+                      <span className="flex items-center gap-1.5"><MapPin size={14} className="text-slate-900"/> {project.address}</span>
+                      <span className="flex items-center gap-1.5"><HardHat size={14} className="text-slate-900"/> Responsável: {project.responsible}</span>
+                    </>
+                  )}
                </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6">
                <div className="space-y-1">
                   <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em]">Início</p>
-                  <p className="text-sm font-black text-slate-900">{new Date(project.startDate).toLocaleDateString('pt-PT')}</p>
+                  {isEditing ? (
+                    <input type="date" value={editedProject.startDate} onChange={(e) => setEditedProject({...editedProject, startDate: e.target.value})} className="text-sm font-black text-slate-900 bg-slate-100 p-1 rounded-md w-full" />
+                  ) : (
+                    <p className="text-sm font-black text-slate-900">{new Date(project.startDate).toLocaleDateString('pt-PT')}</p>
+                  )}
                </div>
                <div className="space-y-1">
                   <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em]">Término</p>
-                  <p className="text-sm font-black text-slate-900">{new Date(project.endDate).toLocaleDateString('pt-PT')}</p>
+                  {isEditing ? (
+                    <input type="date" value={editedProject.endDate} onChange={(e) => setEditedProject({...editedProject, endDate: e.target.value})} className="text-sm font-black text-slate-900 bg-slate-100 p-1 rounded-md w-full" />
+                  ) : (
+                    <p className="text-sm font-black text-slate-900">{new Date(project.endDate).toLocaleDateString('pt-PT')}</p>
+                  )}
                </div>
                <div className="space-y-1">
                   <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em]">Orçamento</p>
-                  <p className="text-sm font-black text-slate-900">€ {project.budget.toLocaleString('pt-PT')}</p>
+                  {isEditing ? (
+                    <input type="number" value={editedProject.budget} onChange={(e) => setEditedProject({...editedProject, budget: Number(e.target.value)})} className="text-sm font-black text-slate-900 bg-slate-100 p-1 rounded-md w-full" />
+                  ) : (
+                    <p className="text-sm font-black text-slate-900">€ {project.budget.toLocaleString('pt-PT')}</p>
+                  )}
                </div>
                <div className="space-y-1">
                   <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em]">Custo Atual</p>
@@ -331,9 +478,9 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
         </div>
 
         <div className="flex bg-slate-900 p-2 gap-1 overflow-x-auto no-scrollbar print:hidden">
-            {(['budget-progress', 'materials', 'documents', 'team', 'statement'] as const).map(tab => (
+            {(['budget-progress', 'materials', 'documents', 'team', 'statement', 'logbook'] as const).map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 min-w-[140px] py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === tab ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}>
-                {tab === 'budget-progress' ? 'Planilha de Progresso' : tab === 'materials' ? 'Materiais' : tab === 'documents' ? 'Arquivo Técnico' : tab === 'team' ? 'Equipe' : 'Extrato'}
+                {tab === 'budget-progress' ? 'Planilha de Progresso' : tab === 'materials' ? 'Materiais' : tab === 'documents' ? 'Arquivo Técnico' : tab === 'team' ? 'Equipe' : tab === 'statement' ? 'Extrato' : 'Livro de Obra'}
               </button>
             ))}
         </div>
@@ -494,33 +641,71 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
         )}
 
         {activeTab === 'statement' && (
-           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
-              <div className="p-8 border-b border-slate-200 bg-slate-50">
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2"><DollarSign size={18} /> Resumo Orçamental</h3>
-                  <p className="text-[9px] font-bold text-slate-600 uppercase mt-1">Comparativo de orçamento planejado vs custo real</p>
+           <ProjectStatement 
+             project={project} 
+             transactions={transactions} 
+             timesheetRecords={timesheetRecords}
+           />
+        )}
+
+        {activeTab === 'logbook' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-8 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                <div>
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                    <BookOpen size={18} /> Livro de Obra Digital
+                  </h3>
+                  <p className="text-[9px] font-bold text-slate-600 uppercase mt-1">Registros diários, ocorrências e fotos da evolução</p>
+                </div>
+                {isAdmin && (
+                  <button onClick={() => setIsLogbookModalOpen(true)} className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black flex items-center gap-2 shadow-xl">
+                    <Plus size={16} className="text-amber-500" /> Novo Registro
+                  </button>
+                )}
               </div>
               <div className="p-8 space-y-8">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="p-8 bg-slate-900 rounded-[2rem] text-white">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Budget Total</p>
-                        <p className="text-3xl font-black">€ {project.budget.toLocaleString('pt-PT')}</p>
+                {logbookEntries.length > 0 ? logbookEntries.map((entry) => (
+                  <div key={entry.id} className="relative pl-8 border-l-2 border-slate-200 pb-8 last:pb-0">
+                    <div className="absolute -left-[9px] top-0 w-4 h-4 bg-slate-900 rounded-full border-4 border-white shadow-sm"></div>
+                    <div className="bg-slate-50 rounded-3xl p-6 border border-slate-200 hover:border-slate-900 transition-all group">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(entry.date).toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight mt-1">Registrado por: {entry.author}</h4>
+                        </div>
+                        {isAdmin && (
+                          <button onClick={() => handleDeleteLogbookEntry(entry.id)} className="p-2 text-slate-300 hover:text-red-600 transition-all opacity-0 group-hover:opacity-100">
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap mb-6">{entry.content}</p>
+                      
+                      {entry.attachments && entry.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-3">
+                          {entry.attachments.map((att, idx) => (
+                            <button 
+                              key={idx} 
+                              onClick={() => setViewingAttachment(att.url)}
+                              className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-600 hover:border-slate-900 hover:text-slate-900 transition-all"
+                            >
+                              <Paperclip size={12} /> {att.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="p-8 bg-red-50 border-2 border-red-100 rounded-[2rem] text-red-900">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-red-400 mb-2">Total Executado</p>
-                        <p className="text-3xl font-black">€ {project.spent.toLocaleString('pt-PT')}</p>
-                    </div>
-                 </div>
-                 <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200">
-                    <div className="flex justify-between items-center mb-4">
-                       <span className="text-xs font-black text-slate-900 uppercase tracking-widest">Margem de Obra</span>
-                       <span className="text-lg font-black text-emerald-600">{(((project.budget - project.spent) / project.budget) * 100).toFixed(1)}%</span>
-                    </div>
-                    <div className="h-4 bg-slate-200 rounded-full overflow-hidden p-1">
-                       <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.max(0, ((project.budget - project.spent) / project.budget) * 100)}%` }} />
-                    </div>
-                 </div>
+                  </div>
+                )) : (
+                  <div className="py-24 text-center border-2 border-dashed border-slate-100 rounded-[2.5rem]">
+                    <BookOpen size={48} className="mx-auto text-slate-100 mb-4" />
+                    <p className="text-slate-400 uppercase font-black text-[10px] tracking-widest italic">Nenhum registro no livro de obra até o momento.</p>
+                  </div>
+                )}
               </div>
-           </div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -538,8 +723,15 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
               <form onSubmit={handleSaveMaterial} className="p-8 space-y-6 overflow-y-auto">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="col-span-2">
-                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Descrição do Material</label>
-                       <input required type="text" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={materialForm.materialName} onChange={e => setMaterialForm({...materialForm, materialName: e.target.value})} placeholder="Ex: Viga IPE 200 S235JR" />
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Categoria / Tipo</label>
+                       <select className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black" value={materialForm.category} onChange={e => setMaterialForm({...materialForm, category: e.target.value as any})}>
+                          <option value="Material">Material de Construção</option>
+                          <option value="Serviço Terceirizado">Serviço Terceirizado</option>
+                       </select>
+                    </div>
+                    <div className="col-span-2">
+                       <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Descrição (Nome do Material ou Serviço)</label>
+                       <input required type="text" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={materialForm.materialName} onChange={e => setMaterialForm({...materialForm, materialName: e.target.value})} placeholder="Ex: Viga IPE 200 ou Pintura Fachada" />
                     </div>
                     <div>
                        <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Quantidade</label>
@@ -552,6 +744,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                           <option value="kg">Quilograma (kg)</option>
                           <option value="m2">Metro Quadrado (m2)</option>
                           <option value="m">Metro Linear (m)</option>
+                          <option value="Empreitada">Empreitada</option>
                        </select>
                     </div>
                     <div>
@@ -683,6 +876,57 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ project, onBack, 
                   <button onClick={() => setViewingAttachment(null)} className="px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Fechar Visualização</button>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* MODAL: NOVO REGISTRO LIVRO DE OBRA */}
+      {isLogbookModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-in border border-white/10 flex flex-col max-h-[95vh]">
+            <div className="bg-slate-900 p-8 flex justify-between items-center text-white shrink-0">
+              <h3 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
+                <BookOpen size={24} className="text-emerald-500" /> Novo Registro de Obra
+              </h3>
+              <button onClick={() => setIsLogbookModalOpen(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
+            </div>
+            <form onSubmit={handleSaveLogbookEntry} className="p-8 space-y-6 overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Data do Registro</label>
+                  <input required type="date" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black" value={logbookForm.date} onChange={e => setLogbookForm({...logbookForm, date: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Responsável</label>
+                  <input required type="text" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black" value={logbookForm.author} onChange={e => setLogbookForm({...logbookForm, author: e.target.value})} />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Relatório / Ocorrências</label>
+                  <textarea required className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black h-40 resize-none" value={logbookForm.content} onChange={e => setLogbookForm({...logbookForm, content: e.target.value})} placeholder="Descreva o que aconteceu na obra hoje..." />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[10px] font-black text-slate-950 uppercase mb-2 tracking-widest">Fotos / Documentos da Ocorrência</label>
+                  <div 
+                    className="border-2 border-dashed border-slate-300 rounded-[2rem] p-8 bg-slate-50 relative group flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100"
+                    onClick={() => logbookFileInputRef.current?.click()}
+                  >
+                    <UploadCloud size={32} className="text-slate-400 mb-2" />
+                    <p className="text-[10px] font-black text-slate-600 uppercase">
+                      {logbookAttachments.length > 0 
+                        ? `${logbookAttachments.length} arquivos selecionados` 
+                        : 'Anexar Fotos ou PDFs'}
+                    </p>
+                    <input type="file" ref={logbookFileInputRef} className="hidden" multiple onChange={e => setLogbookAttachments(Array.from(e.target.files || []))} />
+                  </div>
+                </div>
+              </div>
+              <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
+                <button type="button" disabled={isUploading} onClick={() => setIsLogbookModalOpen(false)} className="px-6 py-4 text-slate-500 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                <button type="submit" disabled={isUploading} className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl flex items-center gap-2">
+                  {isUploading ? 'Salvando...' : 'Salvar no Livro'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

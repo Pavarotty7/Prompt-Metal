@@ -26,7 +26,8 @@ import {
   FileText,
   CreditCard,
   Banknote,
-  MapPin
+  MapPin,
+  Clock
 } from 'lucide-react';
 import { UserRole, Employee, Project, TimesheetRecord } from '../types';
 
@@ -73,8 +74,8 @@ const INITIAL_DEPARTMENTS: Department[] = [
 ];
 
 const INITIAL_CEOS: CEO[] = [
-  { id: 'ceo1', name: "Sócio Fundador 01", role: "Diretor Executivo (CEO)", description: "Planejamento estratégico master, expansão da marca e relação com grandes contas corporativas." },
-  { id: 'ceo2', name: "Sócio Fundador 02", role: "Diretor de Operações (COO)", description: "Gestão da eficiência produtiva, suprimentos estratégicos e conformidade técnica da frota." }
+  { id: 'ceo1', name: "Rodrigo", role: "Diretor Executivo (CEO)", description: "Planejamento estratégico master, expansão da marca e relação com grandes contas corporativas." },
+  { id: 'ceo2', name: "Diego Almeida", role: "Diretor de Operações (COO)", description: "Gestão da eficiência produtiva, suprimentos estratégicos e conformidade técnica da frota." }
 ];
 
 const ROLES_LIST = [
@@ -111,6 +112,7 @@ const TeamView: React.FC<TeamViewProps> = ({
   userRole, 
   employees = [], 
   projects = [],
+  timesheetRecords = [],
   onAddEmployee,
   onUpdateEmployee,
   onDeleteEmployee
@@ -128,6 +130,36 @@ const TeamView: React.FC<TeamViewProps> = ({
   const [confirmDelete, setConfirmDelete] = useState<{type: 'dept' | 'pro' | 'emp' | 'ceo', id: string, parentId?: string} | null>(null);
   
   const isAdmin = userRole === 'admin';
+
+  const currentCycleRange = useMemo(() => {
+    const now = new Date();
+    const day = now.getDate();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+
+    let start, end;
+    if (day >= 25) {
+      start = new Date(year, month, 25);
+      end = new Date(year, month + 1, 24);
+    } else {
+      start = new Date(year, month - 1, 25);
+      end = new Date(year, month, 24);
+    }
+    return { start, end };
+  }, []);
+
+  const getEmployeeMonthlyTotal = (employeeName: string) => {
+    if (!timesheetRecords) return 0;
+    return timesheetRecords
+      .filter(r => {
+        const recordDate = new Date(r.date);
+        const d = new Date(recordDate.getFullYear(), recordDate.getMonth(), recordDate.getDate());
+        const s = new Date(currentCycleRange.start.getFullYear(), currentCycleRange.start.getMonth(), currentCycleRange.start.getDate());
+        const e = new Date(currentCycleRange.end.getFullYear(), currentCycleRange.end.getMonth(), currentCycleRange.end.getDate());
+        return r.employeeName === employeeName && d >= s && d <= e;
+      })
+      .reduce((sum, r) => sum + r.totalPay, 0);
+  };
 
   const [empForm, setEmpForm] = useState({ 
     id: '',
@@ -151,7 +183,7 @@ const TeamView: React.FC<TeamViewProps> = ({
       e.role.toLowerCase().includes(searchTerm.toLowerCase()) || 
       e.nif?.includes(searchTerm)
     )
-    .sort((a, b) => a.name.localeCompare(b.name)), [employees, searchTerm]);
+    .sort((a, b) => (b.monthlySalary || 0) - (a.monthlySalary || 0)), [employees, searchTerm]);
   
   const filteredDepartments = useMemo(() => {
     if (!searchTerm) return departments;
@@ -291,6 +323,10 @@ const TeamView: React.FC<TeamViewProps> = ({
                      <div className="p-4 bg-slate-100 text-slate-950 rounded-2xl group-hover:bg-slate-900 group-hover:text-white transition-all border border-slate-200 shadow-sm"><User size={32} /></div>
                      <div className="flex flex-col items-end gap-2">
                        <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest border ${emp.type === 'CLT' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-blue-50 text-blue-800 border-blue-300'}`}>{emp.type}</span>
+                       <div className="text-right">
+                         <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Acumulado Ciclo</p>
+                         <p className="text-[10px] font-black text-emerald-600 leading-none">€ {getEmployeeMonthlyTotal(emp.name).toLocaleString('pt-PT', {minimumFractionDigits: 2})}</p>
+                       </div>
                        {isAdmin && (
                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                            <button 
@@ -303,7 +339,8 @@ const TeamView: React.FC<TeamViewProps> = ({
                                  type: emp.type,
                                  category: emp.category,
                                  allocation: `${emp.allocationId}|${emp.allocationType}`,
-                                 baseRate: emp.baseRate?.toString() || ''
+                                 baseRate: emp.baseRate?.toString() || '',
+                                 monthlySalary: emp.monthlySalary?.toString() || ''
                                });
                                setIsEmployeeModalOpen(true);
                              }}

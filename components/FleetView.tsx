@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useCallback } from 'react';
-import { Vehicle, VehicleDocument, MaintenanceRecord, UserRole, Attachment } from '../types';
+import { Vehicle, VehicleDocument, MaintenanceRecord, UserRole, Attachment, FuelLog } from '../types';
 import { driveService } from '../services/driveService';
 import { uploadFile } from '../services/fileService';
 import { 
@@ -194,21 +194,20 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
 
     setIsUploading(true);
     try {
-      const newAttachments: Attachment[] = [];
-      for (const file of fuelForm.receiptFiles) {
-        const url = await uploadFile(file);
-        newAttachments.push({ name: file.name, url });
-      }
+      const attachments: Attachment[] = await Promise.all(fuelForm.receiptFiles.map(async (file) => {
+        const { url } = await uploadFile(file);
+        return { name: file.name, url };
+      }));
 
-      const newLog = { 
+      const newLog: FuelLog = { 
         id: Math.random().toString(36).substr(2, 9), 
         date: fuelForm.date, 
         km: Number(fuelForm.km), 
         liters: Number(fuelForm.liters), 
         cost: Number(fuelForm.cost),
-        receiptUrl: newAttachments.length > 0 ? newAttachments[0].url : undefined,
-        receiptFileName: newAttachments.length > 0 ? newAttachments[0].name : undefined,
-        attachments: newAttachments
+        receiptUrl: attachments[0]?.url,
+        receiptFileName: attachments[0]?.name,
+        attachments
       };
 
       const updated = { 
@@ -239,20 +238,19 @@ const FleetView: React.FC<FleetViewProps> = ({ vehicles, onUpdateVehicles, userR
 
     setIsUploading(true);
     try {
-      const newAttachments: Attachment[] = [];
-      for (const file of docForm.files) {
-        const url = await uploadFile(file);
-        newAttachments.push({ name: file.name, url });
-      }
+      const attachments: Attachment[] = await Promise.all(docForm.files.map(async (file) => {
+        const { url } = await uploadFile(file);
+        return { name: file.name, url };
+      }));
 
       const newDoc: VehicleDocument = {
         id: Math.random().toString(36).substr(2, 9),
         name: docForm.name,
         type: 'Outros',
         uploadDate: new Date().toISOString().split('T')[0],
-        url: newAttachments[0].url,
-        fileName: newAttachments[0].name,
-        attachments: newAttachments
+        url: attachments[0]?.url,
+        fileName: attachments[0]?.name,
+        attachments
       };
 
       const updatedVehicle = {

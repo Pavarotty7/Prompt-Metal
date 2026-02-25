@@ -1,6 +1,8 @@
 
+// This is a test comment.
 import React, { useState, useMemo } from 'react';
 import { Project, Employee, TimesheetRecord, UserRole } from '../types';
+import { uploadFile } from '../services/fileService';
 import { 
   ClipboardList, 
   Plus, 
@@ -20,7 +22,10 @@ import {
   Building2,
   Users,
   Banknote,
-  Clock
+  Clock,
+  UploadCloud,
+  Paperclip,
+  Edit
 } from 'lucide-react';
 
 interface TimesheetViewProps {
@@ -29,15 +34,105 @@ interface TimesheetViewProps {
   records: TimesheetRecord[];
   onAddBatch: (records: TimesheetRecord[]) => void;
   onDeleteRecord: (id: string) => void;
+  onDeleteBatch?: (ids: string[]) => void;
   userRole?: UserRole;
 }
 
-const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, records, onAddBatch, onDeleteRecord, userRole }) => {
+const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, records, onAddBatch, onDeleteRecord, onDeleteBatch, userRole }) => {
   const [viewMode, setViewMode] = useState<'records' | 'employees'>('employees');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7)); 
   const isAdmin = userRole === 'admin';
+
+  // State for single record modal
+  const [isSingleRecordModalOpen, setIsSingleRecordModalOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<TimesheetRecord | null>(null);
+  const [singleRecordEmployeeId, setSingleRecordEmployeeId] = useState<string>('');
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<{ text: string, total: number } | null>(null);
+
+  const getInitialFormState = (): Omit<TimesheetRecord, 'id' | 'employeeName' | 'totalPay'> => ({
+    date: new Date().toISOString().split('T')[0],
+    projectId: '',
+    status: 'Presente',
+    standardHours: 8,
+    dailyRate: 0,
+    hourlyRate: 0,
+    overtimeHours: 0,
+    advanceDeduction: 0,
+    notes: '',
+    attachments: [],
+  });
+
+  const [singleRecordFormData, setSingleRecordFormData] = useState(getInitialFormState());
+
+  const handleSingleRecordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin) return;
+
+    setIsUploading(true);
+    try {
+      const newAttachments = await Promise.all(
+        attachmentFiles.map(async (file) => {
+          const { url, fileName } = await uploadFile(file);
+          return { name: fileName, url };
+        })
+      );
+
+      const recordData = {
+        ...singleRecordFormData,
+        totalPay: 0, // This will be recalculated
+      };
+
+      // Recalculate totalPay
+      const dailyRate = recordData.dailyRate;
+      const hourlyRate = dailyRate / 8;
+      const overtimePay = recordData.overtimeHours * hourlyRate;
+      const basePay = (recordData.status === 'Presente' || recordData.status === 'Escritório') ? (dailyRate * (recordData.standardHours / 8)) : 0;
+      recordData.totalPay = Math.max(0, basePay + overtimePay - recordData.advanceDeduction);
+      recordData.hourlyRate = hourlyRate;
+
+      let employeeName = '';
+      if (editingRecord) {
+        employeeName = editingRecord.employeeName;
+        const updatedRecord: TimesheetRecord = {
+          ...editingRecord,
+          ...recordData,
+          attachments: [...(editingRecord.attachments || []), ...newAttachments],
+        };
+        const updatedRecords = records.map(r => r.id === editingRecord.id ? updatedRecord : r);
+        onAddBatch(updatedRecords); 
+      } else {
+        const emp = employees.find(e => e.id === singleRecordEmployeeId);
+        employeeName = emp?.name || 'Desconhecido';
+        const newRecord: TimesheetRecord = {
+          ...recordData,
+          id: `ts-${Date.now()}`,
+          employeeName: employeeName,
+          attachments: newAttachments,
+        };
+        onAddBatch([newRecord]);
+      }
+
+      // Show success message with monthly total
+      const newTotal = getEmployeeTotal(employeeName) + (editingRecord ? (recordData.totalPay - editingRecord.totalPay) : recordData.totalPay);
+      setSuccessMessage({ text: 'Ponto atualizado com sucesso!', total: newTotal });
+
+      setIsSingleRecordModalOpen(false);
+      setEditingRecord(null);
+      setAttachmentFiles([]);
+      
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Erro ao salvar o registro. Verifique os anexos.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const getDefaultPeriod = () => {
     const now = new Date();
@@ -76,13 +171,27 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
     skipWeekends: true
   });
 
+  const cycleRange = useMemo(() => {
+    const [year, month] = filterMonth.split('-').map(Number);
+    // O ciclo de Fevereiro (02) é de 25/01 a 24/02
+    const start = new Date(year, month - 2, 25);
+    const end = new Date(year, month - 1, 24);
+    return { start, end };
+  }, [filterMonth]);
+
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
       const matchesSearch = r.employeeName.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesMonth = r.date.startsWith(filterMonth);
-      return matchesSearch && matchesMonth;
+      const recordDate = new Date(r.date);
+      // Ajustar para considerar apenas a data sem hora para comparação precisa
+      const d = new Date(recordDate.getFullYear(), recordDate.getMonth(), recordDate.getDate());
+      const s = new Date(cycleRange.start.getFullYear(), cycleRange.start.getMonth(), cycleRange.start.getDate());
+      const e = new Date(cycleRange.end.getFullYear(), cycleRange.end.getMonth(), cycleRange.end.getDate());
+      
+      const matchesCycle = d >= s && d <= e;
+      return matchesSearch && matchesCycle;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [records, searchTerm, filterMonth]);
+  }, [records, searchTerm, cycleRange]);
 
   const grandTotal = useMemo(() => {
     return filteredRecords.reduce((sum, r) => sum + r.totalPay, 0);
@@ -90,7 +199,13 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
 
   const getEmployeeTotal = (employeeName: string) => {
     return records
-      .filter(r => r.employeeName === employeeName && r.date.startsWith(filterMonth))
+      .filter(r => {
+        const recordDate = new Date(r.date);
+        const d = new Date(recordDate.getFullYear(), recordDate.getMonth(), recordDate.getDate());
+        const s = new Date(cycleRange.start.getFullYear(), cycleRange.start.getMonth(), cycleRange.start.getDate());
+        const e = new Date(cycleRange.end.getFullYear(), cycleRange.end.getMonth(), cycleRange.end.getDate());
+        return r.employeeName === employeeName && d >= s && d <= e;
+      })
       .reduce((sum, r) => sum + r.totalPay, 0);
   };
 
@@ -149,6 +264,12 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
     }
 
     onAddBatch(newRecordsBatch);
+    
+    // Show success message with monthly total
+    const batchTotal = newRecordsBatch.reduce((sum, r) => sum + r.totalPay, 0);
+    const newTotal = getEmployeeTotal(employee.name) + batchTotal;
+    setSuccessMessage({ text: 'Lote de pontos gerado com sucesso!', total: newTotal });
+
     setIsModalOpen(false);
     const nextPeriod = getDefaultPeriod();
     setFormData({
@@ -165,6 +286,47 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
       notes: '',
       skipWeekends: true
     });
+
+    setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
+  const handleDeleteEmployeeCycle = (employeeName: string) => {
+    if (!isAdmin || !onDeleteBatch) return;
+    const recordsToDelete = filteredRecords.filter(r => r.employeeName === employeeName);
+    if (recordsToDelete.length === 0) {
+      alert("Nenhum registro para apagar neste ciclo para este funcionário.");
+      return;
+    }
+    if (!confirm(`Tem certeza que deseja apagar TODOS os ${recordsToDelete.length} registros de ${employeeName} no ciclo atual?`)) return;
+    
+    const idsToDelete = recordsToDelete.map(r => r.id);
+    onDeleteBatch(idsToDelete);
+  };
+
+  const handleDeleteCycle = () => {
+    if (!isAdmin || !onDeleteBatch) return;
+    if (!confirm(`Tem certeza que deseja apagar TODOS os ${filteredRecords.length} registros do ciclo atual (${cycleRange.start.toLocaleDateString('pt-PT')} a ${cycleRange.end.toLocaleDateString('pt-PT')})?`)) return;
+    
+    const idsToDelete = filteredRecords.map(r => r.id);
+    onDeleteBatch(idsToDelete);
+  };
+
+  const handleOpenEditModal = (record: TimesheetRecord) => {
+    setEditingRecord(record);
+    setSingleRecordFormData({
+      ...getInitialFormState(),
+      date: record.date,
+      projectId: record.projectId,
+      status: record.status,
+      standardHours: record.standardHours,
+      dailyRate: record.dailyRate,
+      hourlyRate: record.hourlyRate,
+      overtimeHours: record.overtimeHours,
+      advanceDeduction: record.advanceDeduction,
+      notes: record.notes || '',
+      attachments: record.attachments || [],
+    });
+    setIsSingleRecordModalOpen(true);
   };
 
   const openEmployeeModal = (empId: string) => {
@@ -181,10 +343,12 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
   return (
     <div className="space-y-6 animate-fade-in pb-12">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Folha de Ponto & Diárias</h2>
-          <p className="text-slate-600 font-medium italic">Controle de presença e remuneração da equipe (Ciclo 25 a 25)</p>
-        </div>
+          <div>
+            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Folha de Ponto & Diárias</h2>
+            <p className="text-slate-600 font-medium italic">
+              Ciclo: {cycleRange.start.toLocaleDateString('pt-PT')} a {cycleRange.end.toLocaleDateString('pt-PT')}
+            </p>
+          </div>
         <div className="flex items-center gap-3">
           <div className="flex bg-slate-200 p-1 rounded-xl">
             <button 
@@ -205,15 +369,45 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
             </button>
           </div>
           {isAdmin && (
-            <button 
-                onClick={() => setIsModalOpen(true)}
-                className="bg-teal-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 shadow-xl flex items-center gap-3 transition-all active:scale-95 border border-white/10"
-            >
-                <Plus size={20} className="text-white" /> Lançar em Lote
-            </button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => {
+                  setEditingRecord(null);
+                  setSingleRecordFormData(getInitialFormState());
+                  setSingleRecordEmployeeId('');
+                  setIsSingleRecordModalOpen(true);
+                }}
+                className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black shadow-lg flex items-center gap-3 transition-all active:scale-95"
+              >
+                <Plus size={18} /> Lançamento Individual
+              </button>
+              <button 
+                  onClick={() => setIsModalOpen(true)}
+                  className="bg-teal-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-700 shadow-xl flex items-center gap-3 transition-all active:scale-95 border border-white/10"
+              >
+                  <CalendarRange size={18} /> Lançar em Lote
+              </button>
+            </div>
           )}
         </div>
       </div>
+
+      {successMessage && (
+        <div className="fixed top-24 right-8 z-[200] animate-slide-in-right">
+          <div className="bg-slate-900 text-white p-6 rounded-[2rem] shadow-2xl border border-teal-500/30 flex items-center gap-6">
+            <div className="w-12 h-12 bg-teal-500 rounded-2xl flex items-center justify-center shadow-lg shadow-teal-500/20">
+              <CheckCircle2 size={24} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-teal-400 mb-1">{successMessage.text}</p>
+              <p className="text-lg font-black tracking-tight">Total Acumulado: <span className="text-teal-400 font-mono">€ {successMessage.total.toLocaleString('pt-PT', {minimumFractionDigits: 2})}</span></p>
+            </div>
+            <button onClick={() => setSuccessMessage(null)} className="p-2 hover:bg-white/10 rounded-full transition-all">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {viewMode === 'employees' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
@@ -244,12 +438,23 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
                 </div>
               </div>
 
-              <button 
-                onClick={() => openEmployeeModal(emp.id)}
-                className="w-full py-4 bg-slate-50 text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center gap-2 border border-slate-200"
-              >
-                <CalendarRange size={16} /> Preencher Ponto
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => openEmployeeModal(emp.id)}
+                  className="w-full py-4 bg-slate-50 text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center gap-2 border border-slate-200"
+                >
+                  <CalendarRange size={16} /> Lançar Ponto
+                </button>
+                {isAdmin && (
+                  <button 
+                    onClick={() => handleDeleteEmployeeCycle(emp.name)}
+                    className="p-4 bg-red-50 text-red-600 rounded-2xl hover:bg-red-600 hover:text-white transition-all border border-red-200"
+                    title="Apagar registros do ciclo"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -340,6 +545,87 @@ const TimesheetView: React.FC<TimesheetViewProps> = ({ employees, projects, reco
              </div>
           </div>
         </>
+      )}
+
+      {/* Modal de Lançamento Individual */}
+      {isSingleRecordModalOpen && isAdmin && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-white/10 animate-scale-in max-h-[95vh]">
+            <div className="bg-slate-800 p-8 flex justify-between items-center text-white shrink-0">
+              <h3 className="text-2xl font-black flex items-center gap-4 uppercase tracking-tighter">
+                <ClipboardList size={28} /> {editingRecord ? 'Editar Registro' : 'Novo Registro de Ponto'}
+              </h3>
+              <button onClick={() => setIsSingleRecordModalOpen(false)} className="bg-white/10 p-3 rounded-full hover:bg-white/20 transition-all"><X size={24} /></button>
+            </div>
+            <form onSubmit={handleSingleRecordSubmit} className="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div>
+                    <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Funcionário</label>
+                    <select required className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordEmployeeId} onChange={(e) => setSingleRecordEmployeeId(e.target.value)}>
+                      <option value="">Selecione...</option>
+                      {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </div>
+                <div>
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Data</label>
+                  <input type="date" required className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordFormData.date} onChange={(e) => setSingleRecordFormData({...singleRecordFormData, date: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Status</label>
+                  <select className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordFormData.status} onChange={(e) => setSingleRecordFormData({...singleRecordFormData, status: e.target.value as any})}>
+                    <option value="Presente">Presente</option>
+                    <option value="Falta">Falta</option>
+                    <option value="Folga">Folga</option>
+                    <option value="Escritório">Escritório</option>
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Vincular a Obra</label>
+                  <select className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordFormData.projectId} onChange={(e) => setSingleRecordFormData({...singleRecordFormData, projectId: e.target.value})}>
+                    <option value="">Escritório / Administrativo</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Horas Normais</label>
+                  <input type="number" step="0.5" className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordFormData.standardHours} onChange={(e) => setSingleRecordFormData({...singleRecordFormData, standardHours: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Horas Extras</label>
+                  <input type="number" step="0.5" className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordFormData.overtimeHours} onChange={(e) => setSingleRecordFormData({...singleRecordFormData, overtimeHours: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Valor da Diária (€)</label>
+                  <input type="number" step="0.01" className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordFormData.dailyRate} onChange={(e) => setSingleRecordFormData({...singleRecordFormData, dailyRate: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Adiantamento (€)</label>
+                  <input type="number" step="0.01" className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordFormData.advanceDeduction} onChange={(e) => setSingleRecordFormData({...singleRecordFormData, advanceDeduction: Number(e.target.value)})} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Notas</label>
+                  <textarea className="w-full px-6 py-4 bg-white border-2 border-slate-200 rounded-2xl text-sm font-black text-slate-900 outline-none" value={singleRecordFormData.notes} onChange={(e) => setSingleRecordFormData({...singleRecordFormData, notes: e.target.value})} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-black text-slate-950 uppercase mb-3 tracking-widest">Anexos</label>
+                  <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 bg-white relative group flex flex-col items-center justify-center">
+                    <input type="file" multiple className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => setAttachmentFiles(Array.from(e.target.files || []))} />
+                    <UploadCloud size={32} className="text-slate-400 group-hover:text-teal-600 mb-2 transition-all" />
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      {attachmentFiles.length > 0 ? `${attachmentFiles.length} arquivos selecionados` : 'Arrastar ou clicar para selecionar'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="pt-6 flex justify-end gap-3 border-t border-slate-200">
+                <button type="button" onClick={() => setIsSingleRecordModalOpen(false)} className="px-6 py-3 text-slate-400 font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
+                <button type="submit" disabled={isUploading} className="bg-slate-900 text-white px-10 py-4 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl hover:bg-black active:scale-95 transition-all flex items-center gap-2">
+                  {isUploading ? 'Salvando...' : (editingRecord ? 'Atualizar' : 'Salvar')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {isModalOpen && isAdmin && (
